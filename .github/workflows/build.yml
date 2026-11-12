@@ -15,8 +15,7 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - uses: android-actions/setup-android@v3
-
+      # Android SDK уже установлен на ubuntu-latest; ANDROID_HOME задан образом.
       - name: Build and test
         env:
           # Ключ MapKit не хранится в репозитории: добавьте секрет MAPKITSDK
