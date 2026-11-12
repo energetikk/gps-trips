@@ -7,8 +7,11 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import ru.gpstrips.data.LiveSender
+import ru.gpstrips.data.LiveState
 import ru.gpstrips.data.LiveTrackingService
 import ru.gpstrips.data.LogRepository
 import ru.gpstrips.data.Prefs
@@ -31,13 +34,15 @@ data class UiState(
     val liveUrl: String = "",
     val liveToken: String = "",
     val liveDevice: String = "car",
-    val liveIntervalSec: Int = 3
+    val liveIntervalSec: Int = 3,
+    val historyEnabled: Boolean = true
 )
 
 class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     private val prefs = Prefs(app)
     private val repo = LogRepository(app)
+    private var syncJob: Job? = null
 
     var state by mutableStateOf(
         UiState(
@@ -45,15 +50,17 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             tgToken = prefs.tgToken,
             tgChat = prefs.tgChat,
             liveEnabled = prefs.liveEnabled,
-            liveUrl = prefs.liveUrl,
+            liveUrl = LiveSender.baseUrl(prefs.liveUrl),
             liveToken = prefs.liveToken,
             liveDevice = prefs.liveDevice,
-            liveIntervalSec = prefs.liveIntervalSec
+            liveIntervalSec = prefs.liveIntervalSec,
+            historyEnabled = prefs.historyEnabled
         )
     )
         private set
 
     init {
+        if (state.liveUrl.isNotBlank() && state.liveUrl != prefs.liveUrl) prefs.liveUrl = state.liveUrl
         if (state.target != null) refresh(false)
         if (state.liveEnabled) LiveTrackingService.start(app)
     }
@@ -83,6 +90,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 fileCount = loaded.files,
                 error = loaded.message
             )
+            syncTrips()
         }
     }
 
@@ -101,10 +109,13 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun saveLive(url: String, token: String, device: String, interval: Int) {
-        prefs.liveUrl = url
+        val base = LiveSender.baseUrl(url)
+        val changed = base != LiveSender.baseUrl(prefs.liveUrl) || token != prefs.liveToken
+        prefs.liveUrl = base
         prefs.liveToken = token
         prefs.liveDevice = device
         prefs.liveIntervalSec = interval
+        if (changed) prefs.clearSyncedTrips()
         state = state.copy(
             liveUrl = prefs.liveUrl,
             liveToken = prefs.liveToken,
@@ -112,6 +123,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             liveIntervalSec = prefs.liveIntervalSec,
             toast = "Настройки передачи сохранены"
         )
+        if (changed) syncTrips()
     }
 
     fun setLiveEnabled(enabled: Boolean) {
@@ -126,6 +138,94 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             toast = if (enabled) "Передача координат включена" else "Передача координат выключена"
         )
     }
+
+    fun setHistoryEnabled(enabled: Boolean) {
+        prefs.historyEnabled = enabled
+        state = state.copy(
+            historyEnabled = enabled,
+            toast = if (enabled) "История поездок включена" else "История поездок выключена"
+        )
+        if (enabled) syncTrips()
+    }
+
+    /** Догружает на сайт поездки, которых там ещё нет (или их трек изменился). */
+    fun syncTrips() {
+        if (!state.historyEnabled) return
+        if (state.trips.isEmpty()) return
+        if (syncJob?.isActive == true) return
+
+        val base = LiveSender.baseUrl(state.liveUrl)
+        if (!LiveSender.isValidEndpoint(base)) {
+            LiveState.update { it.copy(syncError = "Не задан адрес сервера") }
+            return
+        }
+        if (prefs.liveToken.isBlank()) {
+            LiveState.update { it.copy(syncError = "Не задан токен устройства") }
+            return
+        }
+
+        val trips = state.trips
+        syncJob = viewModelScope.launch {
+            val synced = syncedMap()
+            val pending = withContext(Dispatchers.Default) {
+                trips.filter { synced[it.id] != signature(it) }
+            }
+            if (pending.isEmpty()) {
+                LiveState.update {
+                    it.copy(
+                        syncing = false,
+                        syncDone = 0,
+                        syncTotal = 0,
+                        syncError = null,
+                        lastSyncAt = System.currentTimeMillis()
+                    )
+                }
+                return@launch
+            }
+
+            LiveState.update {
+                it.copy(syncing = true, syncDone = 0, syncTotal = pending.size, syncError = null)
+            }
+
+            val uploaded = HashMap<String, String>()
+            var done = 0
+            var lastError: String? = null
+
+            for (trip in pending) {
+                val error = withContext(Dispatchers.IO) {
+                    LiveSender.uploadTrip(base, prefs.liveToken, prefs.liveDevice, trip)
+                }
+                if (error == null) {
+                    uploaded[trip.id] = signature(trip)
+                } else if (lastError == null) {
+                    lastError = error
+                }
+                done++
+                LiveState.update { it.copy(syncDone = done) }
+                if (error != null && error.contains("HTTP 401")) break
+            }
+
+            if (uploaded.isNotEmpty()) prefs.markTripsSynced(uploaded)
+            LiveState.update {
+                it.copy(
+                    syncing = false,
+                    lastSyncAt = System.currentTimeMillis(),
+                    syncError = lastError
+                )
+            }
+        }
+    }
+
+    private fun syncedMap(): Map<String, String> {
+        val out = HashMap<String, String>()
+        for (entry in prefs.syncedTrips()) {
+            val sep = entry.indexOf('\u001F')
+            if (sep > 0) out[entry.substring(0, sep)] = entry.substring(sep + 1)
+        }
+        return out
+    }
+
+    private fun signature(trip: Trip): String = "${trip.endMs}:${trip.track.size}"
 
     fun sendSummary() {
         send(Report.summary(state.trips))

@@ -108,7 +108,9 @@ private fun App(vm: AppViewModel) {
                 onSaveLive = { url, token, device, interval ->
                     vm.saveLive(url, token, device, interval)
                 },
-                onToggleLive = { vm.setLiveEnabled(it) }
+                onToggleLive = { vm.setLiveEnabled(it) },
+                onToggleHistory = { vm.setHistoryEnabled(it) },
+                onSyncTrips = { vm.syncTrips() }
             )
         }
 

@@ -1,14 +1,15 @@
 'use strict';
 
 /**
- * Приём координат от приложения «GPS Поездки» и отдача последней точки
+ * Приём координат и поездок от приложения «GPS Поездки» и отдача их
  * веб-странице с картой Яндекса.
  *
  * Без зависимостей: Node.js 20+, стандартная библиотека.
  * Переменные окружения:
  *   TRACK_TOKEN    — обязательный токен устройства (заголовок X-Token);
  *   VIEW_PASSWORD  — необязательный пароль на просмотр страницы и API;
- *   STATE_FILE     — путь к файлу состояния (переживает перезапуск);
+ *   STATE_FILE     — файл с последней позицией (переживает перезапуск);
+ *   TRIPS_FILE     — файл с историей поездок (по умолчанию рядом со STATE_FILE);
  *   PUBLIC_DIR     — каталог со страницей (для запуска без Nginx);
  *   PORT           — порт (по умолчанию 3000).
  */
@@ -22,9 +23,14 @@ const PORT = Number(process.env.PORT || 3000);
 const TOKEN = (process.env.TRACK_TOKEN || '').trim();
 const VIEW_PASSWORD = (process.env.VIEW_PASSWORD || '').trim();
 const STATE_FILE = (process.env.STATE_FILE || '').trim();
+const TRIPS_FILE = (process.env.TRIPS_FILE || '').trim() ||
+  (STATE_FILE ? path.join(path.dirname(STATE_FILE), 'trips.json') : '');
 const PUBLIC_DIR = (process.env.PUBLIC_DIR || '').trim();
 
-const MAX_BODY = 8 * 1024;
+const MAX_POSITION_BODY = 8 * 1024;
+const MAX_TRIP_BODY = 2 * 1024 * 1024;
+const MAX_TRACK_POINTS = 2000;
+const MAX_TRIPS = 5000;
 const TRAIL_MAX = 300;
 const FIX_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
@@ -34,7 +40,9 @@ if (!TOKEN) {
 }
 
 let state = { pos: null, trail: [] };
+const trips = new Map();
 loadState();
+loadTrips();
 
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, 'http://localhost');
@@ -43,12 +51,24 @@ const server = http.createServer((req, res) => {
     handlePosition(req, res);
     return;
   }
+  if (url.pathname === '/api/trips' && req.method === 'POST') {
+    handleTripUpload(req, res);
+    return;
+  }
+  if (url.pathname === '/api/trips' && req.method === 'GET') {
+    handleTripsList(req, res);
+    return;
+  }
+  if (url.pathname.startsWith('/api/trips/') && req.method === 'GET') {
+    handleTripGet(req, res, url.pathname);
+    return;
+  }
   if (url.pathname === '/api/last' && req.method === 'GET') {
     handleLast(req, res);
     return;
   }
   if (url.pathname === '/api/health' && req.method === 'GET') {
-    sendJson(res, 200, { ok: true, hasPosition: !!state.pos });
+    sendJson(res, 200, { ok: true, hasPosition: !!state.pos, trips: trips.size });
     return;
   }
   if (url.pathname.startsWith('/api/')) {
@@ -70,6 +90,7 @@ server.listen(PORT, '0.0.0.0', () => {
 for (const signal of ['SIGTERM', 'SIGINT']) {
   process.on(signal, () => {
     persist();
+    persistTrips();
     process.exit(0);
   });
 }
@@ -77,12 +98,12 @@ for (const signal of ['SIGTERM', 'SIGINT']) {
 // ---------- API ----------
 
 function handlePosition(req, res) {
-  if (!safeEqual(req.headers['x-token'] || '', TOKEN)) {
+  if (!tokenAllowed(req)) {
     sendJson(res, 401, { ok: false, error: 'bad token' });
     return;
   }
 
-  readBody(req, MAX_BODY)
+  readBody(req, MAX_POSITION_BODY)
     .then((text) => {
       let body;
       try {
@@ -121,6 +142,76 @@ function handlePosition(req, res) {
       const code = error.message === 'too large' ? 413 : 400;
       sendJson(res, code, { ok: false, error: error.message });
     });
+}
+
+function handleTripUpload(req, res) {
+  if (!tokenAllowed(req)) {
+    sendJson(res, 401, { ok: false, error: 'bad token' });
+    return;
+  }
+
+  readBody(req, MAX_TRIP_BODY)
+    .then((text) => {
+      let body;
+      try {
+        body = JSON.parse(text);
+      } catch {
+        sendJson(res, 400, { ok: false, error: 'bad json' });
+        return;
+      }
+      const trip = normalizeTrip(body);
+      if (!trip) {
+        sendJson(res, 400, { ok: false, error: 'bad trip' });
+        return;
+      }
+
+      trips.set(trip.id, trip);
+      trimTrips();
+      scheduleTripsSave();
+
+      res.writeHead(204, noStoreHeaders());
+      res.end();
+    })
+    .catch((error) => {
+      const code = error.message === 'too large' ? 413 : 400;
+      sendJson(res, code, { ok: false, error: error.message });
+    });
+}
+
+function handleTripsList(req, res) {
+  if (!viewAllowed(req)) {
+    sendJson(res, 401, { ok: false, error: 'password required' });
+    return;
+  }
+  const list = [...trips.values()]
+    .sort((a, b) => b.startMs - a.startMs)
+    .map(summary);
+
+  sendJson(res, 200, {
+    ok: true,
+    trips: list,
+    serverTime: Date.now(),
+  });
+}
+
+function handleTripGet(req, res, pathname) {
+  if (!viewAllowed(req)) {
+    sendJson(res, 401, { ok: false, error: 'password required' });
+    return;
+  }
+  let id;
+  try {
+    id = decodeURIComponent(pathname.slice('/api/trips/'.length));
+  } catch {
+    sendJson(res, 400, { ok: false, error: 'bad id' });
+    return;
+  }
+  const trip = trips.get(id);
+  if (!trip) {
+    sendJson(res, 404, { ok: false, error: 'trip not found' });
+    return;
+  }
+  sendJson(res, 200, { ok: true, trip });
 }
 
 function handleLast(req, res) {
@@ -170,6 +261,95 @@ function normalizeFix(body) {
   };
 }
 
+function normalizeTrip(body) {
+  if (!body || typeof body !== 'object') return null;
+
+  const id = String(body.id || '').slice(0, 200);
+  if (!id) return null;
+  if (!Array.isArray(body.track)) return null;
+  if (body.track.length < 2 || body.track.length > MAX_TRACK_POINTS) return null;
+
+  const track = [];
+  for (const p of body.track) {
+    if (!Array.isArray(p) || p.length < 3) continue;
+    const t = Number(p[0]);
+    const lat = Number(p[1]);
+    const lon = Number(p[2]);
+    if (!Number.isFinite(t) || t <= 0) continue;
+    if (!Number.isFinite(lat) || lat < -90 || lat > 90) continue;
+    if (!Number.isFinite(lon) || lon < -180 || lon > 180) continue;
+
+    let speed = null;
+    if (p.length > 3 && p[3] !== null && p[3] !== undefined) {
+      const v = Number(p[3]);
+      if (Number.isFinite(v) && v >= 0 && v <= 500) speed = Math.round(v * 10) / 10;
+    }
+    track.push([Math.round(t), lat, lon, speed]);
+  }
+  if (track.length < 2) return null;
+
+  const startMs = tripTs(body.startMs, track[0][0]);
+  let endMs = tripTs(body.endMs, track[track.length - 1][0]);
+  if (endMs < startMs) endMs = startMs;
+
+  return {
+    id,
+    source: String(body.source || 'log').slice(0, 200),
+    device: String(body.device || 'car').slice(0, 64),
+    startMs,
+    endMs,
+    distanceM: clamp(num(body.distanceM, 0), 0, 10_000_000),
+    movingSec: Math.round(clamp(num(body.movingSec, 0), 0, 10_000_000)),
+    maxSpeedKmh: clamp(num(body.maxSpeedKmh, 0), 0, 500),
+    avgSpeedKmh: clamp(num(body.avgSpeedKmh, 0), 0, 500),
+    timeReliable: body.timeReliable === undefined ? true : !!body.timeReliable,
+    points: track.length,
+    track,
+    received: Date.now(),
+  };
+}
+
+function summary(trip) {
+  return {
+    id: trip.id,
+    source: trip.source,
+    device: trip.device,
+    startMs: trip.startMs,
+    endMs: trip.endMs,
+    distanceM: trip.distanceM,
+    movingSec: trip.movingSec,
+    maxSpeedKmh: trip.maxSpeedKmh,
+    avgSpeedKmh: trip.avgSpeedKmh,
+    timeReliable: trip.timeReliable,
+    points: trip.points,
+    received: trip.received,
+  };
+}
+
+function tripTs(value, fallback) {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0) return fallback;
+  const ms = n < 1e12 ? n * 1000 : n;
+  if (ms < 946_684_800_000 || ms > Date.now() + 60 * 60 * 1000) return fallback;
+  return Math.round(ms);
+}
+
+function num(value, fallback) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function trimTrips() {
+  if (trips.size <= MAX_TRIPS) return;
+  const sorted = [...trips.values()].sort((a, b) => a.startMs - b.startMs);
+  const remove = sorted.slice(0, trips.size - MAX_TRIPS);
+  for (const trip of remove) trips.delete(trip.id);
+}
+
 function normalizeTs(value) {
   const n = Number(value);
   const now = Date.now();
@@ -180,6 +360,10 @@ function normalizeTs(value) {
 }
 
 // ---------- авторизация ----------
+
+function tokenAllowed(req) {
+  return safeEqual(req.headers['x-token'] || '', TOKEN);
+}
 
 function viewAllowed(req) {
   if (!VIEW_PASSWORD) return true;
@@ -229,9 +413,10 @@ function noStoreHeaders() {
   };
 }
 
-// ---------- файл состояния ----------
+// ---------- файлы состояния ----------
 
 let saveTimer = null;
+let tripsSaveTimer = null;
 
 function scheduleSave() {
   if (!STATE_FILE || saveTimer) return;
@@ -262,6 +447,43 @@ function loadState() {
       if (Array.isArray(raw.trail)) state.trail = raw.trail.slice(-TRAIL_MAX);
     }
     console.log(`Состояние загружено: позиция ${state.pos ? 'есть' : 'нет'}, точек ${state.trail.length}`);
+  } catch {
+    /* первый запуск */
+  }
+}
+
+function scheduleTripsSave() {
+  if (!TRIPS_FILE || tripsSaveTimer) return;
+  tripsSaveTimer = setTimeout(() => {
+    tripsSaveTimer = null;
+    persistTrips();
+  }, 2000);
+}
+
+function persistTrips() {
+  if (!TRIPS_FILE) return;
+  try {
+    fs.mkdirSync(path.dirname(TRIPS_FILE), { recursive: true });
+    const tmp = `${TRIPS_FILE}.tmp`;
+    fs.writeFileSync(tmp, JSON.stringify([...trips.values()]));
+    fs.renameSync(tmp, TRIPS_FILE);
+  } catch (error) {
+    console.error('Не удалось сохранить историю поездок:', error.message);
+  }
+}
+
+function loadTrips() {
+  if (!TRIPS_FILE) return;
+  try {
+    const raw = JSON.parse(fs.readFileSync(TRIPS_FILE, 'utf8'));
+    if (Array.isArray(raw)) {
+      for (const trip of raw) {
+        if (trip && typeof trip === 'object' && trip.id) {
+          trips.set(String(trip.id), trip);
+        }
+      }
+    }
+    console.log(`История: ${trips.size} поездок`);
   } catch {
     /* первый запуск */
   }
@@ -305,7 +527,7 @@ function serveStatic(req, res, pathname) {
       'Cache-Control': 'no-cache',
     });
     res.end(req.method === 'HEAD' ? undefined : body);
-  } catch (error) {
+  } catch {
     res.writeHead(500);
     res.end('internal error');
   }

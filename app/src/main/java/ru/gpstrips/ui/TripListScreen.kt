@@ -44,6 +44,7 @@ fun TripListScreen(
             .background(P.bg)
             .padding(horizontal = 20.dp)
     ) {
+        val live by LiveState.status.collectAsState()
         Spacer(Modifier.height(18.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
@@ -58,7 +59,6 @@ fun TripListScreen(
                     fontSize = 13.sp
                 )
                 if (state.liveEnabled) {
-                    val live by LiveState.status.collectAsState()
                     Text(
                         text = when {
                             live.lastError != null -> "передача координат: ${live.lastError}"
@@ -68,6 +68,18 @@ fun TripListScreen(
                             else -> "передача координат включена, жду точку…"
                         },
                         color = if (live.lastError != null) P.warn else P.accent,
+                        fontSize = 11.sp
+                    )
+                }
+                if (state.historyEnabled && state.liveUrl.isNotBlank()) {
+                    Text(
+                        text = when {
+                            live.syncing -> "выгружаю историю: ${live.syncDone} из ${live.syncTotal}"
+                            live.syncError != null -> "история: ${live.syncError}"
+                            live.lastSyncAt > 0 -> "история на сайте · ${Fmt.hhmm(live.lastSyncAt)}"
+                            else -> "история отправится при обновлении"
+                        },
+                        color = if (live.syncError != null) P.warn else P.dim,
                         fontSize = 11.sp
                     )
                 }

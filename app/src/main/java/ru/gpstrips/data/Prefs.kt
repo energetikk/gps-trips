@@ -58,8 +58,38 @@ class Prefs(ctx: Context) {
             sp.edit().putBoolean("live_enabled", v).apply()
         }
 
+    /** Выгружать поездки в историю на сайте. */
+    var historyEnabled: Boolean
+        get() = sp.getBoolean("history_enabled", true)
+        set(v) {
+            sp.edit().putBoolean("history_enabled", v).apply()
+        }
+
+    /**
+     * Подписи уже выгруженных поездок. Хранятся в виде "id\u001Fконец:точек":
+     * если трек доехал, подпись меняется и поездка отправится заново.
+     */
+    fun syncedTrips(): Set<String> =
+        sp.getStringSet(KEY_SYNCED, emptySet()) ?: emptySet()
+
+    fun markTripsSynced(entries: Map<String, String>) {
+        if (entries.isEmpty()) return
+        val current = sp.getStringSet(KEY_SYNCED, emptySet())?.toMutableSet() ?: mutableSetOf()
+        for ((id, signature) in entries) {
+            val prefix = "$id\u001F"
+            current.removeAll { it.startsWith(prefix) }
+            current.add(prefix + signature)
+        }
+        sp.edit().putStringSet(KEY_SYNCED, current).apply()
+    }
+
+    fun clearSyncedTrips() {
+        sp.edit().remove(KEY_SYNCED).apply()
+    }
+
     companion object {
         const val MIN_INTERVAL_SEC = 2
         const val MAX_INTERVAL_SEC = 60
+        private const val KEY_SYNCED = "synced_trips"
     }
 }

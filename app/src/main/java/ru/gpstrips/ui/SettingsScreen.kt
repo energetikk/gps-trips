@@ -48,7 +48,9 @@ fun SettingsScreen(
     onSaveTelegram: (String, String) -> Unit,
     onSendSummary: () -> Unit,
     onSaveLive: (String, String, String, Int) -> Unit,
-    onToggleLive: (Boolean) -> Unit
+    onToggleLive: (Boolean) -> Unit,
+    onToggleHistory: (Boolean) -> Unit,
+    onSyncTrips: () -> Unit
 ) {
     val ctx = LocalContext.current
     var token by remember { mutableStateOf(state.tgToken) }
@@ -172,7 +174,7 @@ fun SettingsScreen(
             Spacer(Modifier.height(20.dp))
             SectionLabel("Передача координат на сайт")
             Panel(Modifier.fillMaxWidth()) {
-                Field("Адрес приёма, например https://мой-сайт.ru/api/position", liveUrl) { liveUrl = it }
+                Field("Адрес сервера, например https://мой-сайт.ru", liveUrl) { liveUrl = it }
                 Spacer(Modifier.height(12.dp))
                 Row {
                     Column(Modifier.weight(1f)) {
@@ -205,6 +207,19 @@ fun SettingsScreen(
                         { saveLive(liveUrl, liveToken, liveDevice, liveInterval, onSaveLive) }
                     )
                 }
+                Spacer(Modifier.height(10.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    ActionButton(
+                        if (state.historyEnabled) "История: вкл" else "История: выкл",
+                        { onToggleHistory(!state.historyEnabled) }
+                    )
+                    Spacer(Modifier.width(10.dp))
+                    ActionButton(
+                        "Отправить поездки",
+                        onSyncTrips,
+                        enabled = state.trips.isNotEmpty() && !live.syncing
+                    )
+                }
                 Spacer(Modifier.height(12.dp))
                 Text(
                     text = liveStatusText(state, live),
@@ -215,11 +230,21 @@ fun SettingsScreen(
                     },
                     fontSize = 12.sp
                 )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = syncStatusText(state, live),
+                    color = when {
+                        live.syncError != null -> P.warn
+                        live.syncing -> P.accent
+                        else -> P.dim
+                    },
+                    fontSize = 12.sp
+                )
                 Spacer(Modifier.height(10.dp))
                 Text(
                     "Приложение читает тот же лог GPS, что и список поездок, и отправляет новые " +
-                        "точки на ваш сервер. Токен должен совпадать с TRACK_TOKEN на сервере. " +
-                        "Сайт с картой — в папке server репозитория.",
+                        "точки на ваш сервер. История поездок загружается при обновлении списка. " +
+                        "Токен должен совпадать с TRACK_TOKEN на сервере. Сайт — в папке server.",
                     color = P.dim,
                     fontSize = 12.sp
                 )
@@ -249,6 +274,18 @@ private fun liveStatusText(state: UiState, live: LiveState.Status): String = whe
         append(" · ").append(String.format(java.util.Locale.US, "%.5f, %.5f", live.lastFix.lat, live.lastFix.lon))
         append(" · отправлено ").append(live.sentCount)
     }
+}
+
+private fun syncStatusText(state: UiState, live: LiveState.Status): String = when {
+    !state.historyEnabled -> "История поездок не выгружается"
+    state.trips.isEmpty() -> "Поездок для истории пока нет"
+    live.syncing -> "Выгружаю поездки: ${live.syncDone} из ${live.syncTotal}…"
+    live.syncError != null -> "Ошибка истории: ${live.syncError}"
+    live.lastSyncAt > 0 && live.syncTotal == 0 -> "История актуальна"
+    live.lastSyncAt > 0 ->
+        "Отправлено ${live.syncDone} поездок · ${Fmt.hhmm(live.lastSyncAt)}"
+
+    else -> "История отправится при обновлении списка"
 }
 
 @Composable

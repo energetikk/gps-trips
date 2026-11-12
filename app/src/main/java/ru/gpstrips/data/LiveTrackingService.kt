@@ -26,7 +26,12 @@ object LiveState {
         val lastSentAt: Long = 0L,
         val lastAttemptAt: Long = 0L,
         val sentCount: Int = 0,
-        val lastError: String? = null
+        val lastError: String? = null,
+        val syncing: Boolean = false,
+        val syncDone: Int = 0,
+        val syncTotal: Int = 0,
+        val lastSyncAt: Long = 0L,
+        val syncError: String? = null
     )
 
     private val _status = MutableStateFlow(Status())
@@ -98,14 +103,14 @@ class LiveTrackingService : android.app.Service() {
         LiveState.update { it.copy(lastFix = fix) }
         if (!changed && !heartbeat) return
 
-        val endpoint = prefs.liveUrl
+        val endpoint = LiveSender.baseUrl(prefs.liveUrl)
         if (!LiveSender.isValidEndpoint(endpoint)) {
             LiveState.update { it.copy(lastError = "Не задан адрес сервера (нужен http:// или https://)") }
             return
         }
 
         val now = System.currentTimeMillis()
-        val error = LiveSender.send(endpoint, prefs.liveToken, prefs.liveDevice, fix)
+        val error = LiveSender.send(LiveSender.positionUrl(endpoint), prefs.liveToken, prefs.liveDevice, fix)
         LiveState.update {
             it.copy(
                 lastAttemptAt = now,

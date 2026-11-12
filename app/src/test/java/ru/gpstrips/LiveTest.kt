@@ -7,6 +7,8 @@ import org.junit.Test
 import ru.gpstrips.data.GpxTail
 import ru.gpstrips.data.LiveFix
 import ru.gpstrips.data.LiveSender
+import ru.gpstrips.data.TrackPoint
+import ru.gpstrips.data.Trip
 import java.time.Instant
 
 class LiveTest {
@@ -17,6 +19,46 @@ class LiveTest {
         assertTrue(LiveSender.isValidEndpoint("http://192.168.1.10:8080/api/position"))
         assertFalse(LiveSender.isValidEndpoint("example.ru/api/position"))
         assertFalse(LiveSender.isValidEndpoint(""))
+    }
+
+    @Test
+    fun baseUrlAcceptsBaseOrFullEndpoint() {
+        assertEquals("https://example.ru", LiveSender.baseUrl("https://example.ru"))
+        assertEquals("https://example.ru", LiveSender.baseUrl("https://example.ru/"))
+        assertEquals("https://example.ru", LiveSender.baseUrl("https://example.ru/api/position"))
+        assertEquals("https://example.ru", LiveSender.baseUrl("https://example.ru/api/position/"))
+        assertEquals("https://example.ru", LiveSender.baseUrl("https://example.ru/api/trips"))
+        assertEquals("https://example.ru", LiveSender.baseUrl("  https://example.ru  "))
+        assertEquals(
+            "https://example.ru/api/position",
+            LiveSender.positionUrl("https://example.ru")
+        )
+        assertEquals("https://example.ru/api/trips", LiveSender.tripsUrl("https://example.ru/"))
+    }
+
+    @Test
+    fun tripPayloadContainsTrackArrays() {
+        val trip = Trip(
+            id = "log.nmea@1700000000000",
+            source = "log.nmea",
+            startMs = 1_700_000_000_000L,
+            endMs = 1_700_000_060_000L,
+            distanceM = 1234.5,
+            movingSec = 55,
+            maxSpeedKmh = 64.0,
+            avgSpeedKmh = 48.2,
+            timeReliable = true,
+            track = listOf(
+                TrackPoint(1_700_000_000_000L, 56.1, 44.1, 40.0),
+                TrackPoint(1_700_000_030_000L, 56.2, 44.2, null)
+            )
+        )
+        val json = LiveSender.tripPayload(trip, "car")
+        assertTrue(json.contains("\"id\":\"log.nmea@1700000000000\""))
+        assertTrue(json.contains("\"startMs\":1700000000000"))
+        assertTrue(json.contains("\"track\":[[1700000000000,56.1,44.1,40.0]"))
+        assertTrue(json.contains("[1700000030000,56.2,44.2,null]"))
+        assertTrue(json.contains("\"timeReliable\":true"))
     }
 
     @Test
