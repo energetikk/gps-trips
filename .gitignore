@@ -7,3 +7,6 @@ captures/
 .externalNativeBuild
 .cxx
 *.hprof
+server/.env
+server/node_modules/
+dist/*.apk

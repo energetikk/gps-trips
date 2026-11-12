@@ -1,0 +1,27 @@
+services:
+  api:
+    build: .
+    restart: unless-stopped
+    environment:
+      TRACK_TOKEN: "${TRACK_TOKEN:?Задайте TRACK_TOKEN в server/.env}"
+      VIEW_PASSWORD: "${VIEW_PASSWORD:-}"
+      STATE_FILE: /data/state.json
+      TZ: Europe/Moscow
+    volumes:
+      - state:/data
+    expose:
+      - "3000"
+
+  web:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    depends_on:
+      - api
+    ports:
+      - "${HTTP_PORT:-8080}:80"
+    volumes:
+      - ./web:/usr/share/nginx/html:ro
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+
+volumes:
+  state:

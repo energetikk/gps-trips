@@ -18,6 +18,10 @@ jobs:
       - uses: android-actions/setup-android@v3
 
       - name: Build and test
+        env:
+          # Ключ MapKit не хранится в репозитории: добавьте секрет MAPKITSDK
+          # в настройках репозитория (Settings → Secrets and variables → Actions).
+          MAPKITSDK: ${{ secrets.MAPKITSDK }}
         run: |
           chmod +x gradlew
           ./gradlew --no-daemon assembleDebug testDebugUnitTest
