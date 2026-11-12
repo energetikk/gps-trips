@@ -9,6 +9,7 @@ import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import ru.gpstrips.data.LiveTrackingService
 import ru.gpstrips.data.LogRepository
 import ru.gpstrips.data.Prefs
 import ru.gpstrips.data.Report
@@ -25,7 +26,12 @@ data class UiState(
     val selected: Trip? = null,
     val tgToken: String = "",
     val tgChat: String = "",
-    val sending: Boolean = false
+    val sending: Boolean = false,
+    val liveEnabled: Boolean = false,
+    val liveUrl: String = "",
+    val liveToken: String = "",
+    val liveDevice: String = "car",
+    val liveIntervalSec: Int = 3
 )
 
 class AppViewModel(app: Application) : AndroidViewModel(app) {
@@ -34,12 +40,22 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     private val repo = LogRepository(app)
 
     var state by mutableStateOf(
-        UiState(target = prefs.target, tgToken = prefs.tgToken, tgChat = prefs.tgChat)
+        UiState(
+            target = prefs.target,
+            tgToken = prefs.tgToken,
+            tgChat = prefs.tgChat,
+            liveEnabled = prefs.liveEnabled,
+            liveUrl = prefs.liveUrl,
+            liveToken = prefs.liveToken,
+            liveDevice = prefs.liveDevice,
+            liveIntervalSec = prefs.liveIntervalSec
+        )
     )
         private set
 
     init {
         if (state.target != null) refresh(false)
+        if (state.liveEnabled) LiveTrackingService.start(app)
     }
 
     fun setTarget(value: String) {
@@ -82,6 +98,33 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         prefs.tgToken = token
         prefs.tgChat = chat
         state = state.copy(tgToken = prefs.tgToken, tgChat = prefs.tgChat, toast = "Настройки Telegram сохранены")
+    }
+
+    fun saveLive(url: String, token: String, device: String, interval: Int) {
+        prefs.liveUrl = url
+        prefs.liveToken = token
+        prefs.liveDevice = device
+        prefs.liveIntervalSec = interval
+        state = state.copy(
+            liveUrl = prefs.liveUrl,
+            liveToken = prefs.liveToken,
+            liveDevice = prefs.liveDevice,
+            liveIntervalSec = prefs.liveIntervalSec,
+            toast = "Настройки передачи сохранены"
+        )
+    }
+
+    fun setLiveEnabled(enabled: Boolean) {
+        prefs.liveEnabled = enabled
+        if (enabled) {
+            LiveTrackingService.start(getApplication())
+        } else {
+            LiveTrackingService.stop(getApplication())
+        }
+        state = state.copy(
+            liveEnabled = enabled,
+            toast = if (enabled) "Передача координат включена" else "Передача координат выключена"
+        )
     }
 
     fun sendSummary() {

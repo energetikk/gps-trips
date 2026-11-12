@@ -1,7 +1,19 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
 }
+
+val localProperties = Properties().apply {
+    val file = rootProject.file("local.properties")
+    if (file.exists()) file.inputStream().use { load(it) }
+}
+
+// Ключ MapKit берём из переменной окружения MAPKITSDK (или из local.properties).
+// В репозиторий он не попадает: в APK подставляется только при сборке.
+val mapKitApiKey: String =
+    (System.getenv("MAPKITSDK") ?: localProperties.getProperty("MAPKITSDK") ?: "").trim()
 
 android {
     namespace = "ru.gpstrips"
@@ -11,8 +23,9 @@ android {
         applicationId = "ru.gpstrips"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 2
+        versionName = "1.1"
+        buildConfigField("String", "MAPKIT_API_KEY", "\"$mapKitApiKey\"")
     }
 
     buildTypes {
@@ -32,6 +45,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 
     composeOptions {
@@ -54,6 +68,7 @@ dependencies {
     implementation("androidx.compose.material3:material3")
     implementation("androidx.documentfile:documentfile:1.0.1")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
+    implementation("com.yandex.android:maps.mobile:4.17.0-lite")
     testImplementation("junit:junit:4.13.2")
     testImplementation("net.sf.kxml:kxml2:2.3.0")
 }

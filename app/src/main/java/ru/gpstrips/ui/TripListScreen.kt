@@ -15,6 +15,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -22,6 +24,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import ru.gpstrips.data.Fmt
+import ru.gpstrips.data.LiveState
 import ru.gpstrips.data.Trip
 
 private const val DAY_MS = 86_400_000L
@@ -54,6 +57,20 @@ fun TripListScreen(
                     color = P.dim,
                     fontSize = 13.sp
                 )
+                if (state.liveEnabled) {
+                    val live by LiveState.status.collectAsState()
+                    Text(
+                        text = when {
+                            live.lastError != null -> "передача координат: ${live.lastError}"
+                            live.lastSentAt > 0 ->
+                                "передаю координаты · ${Fmt.hhmm(live.lastSentAt)} · ${live.sentCount}"
+
+                            else -> "передача координат включена, жду точку…"
+                        },
+                        color = if (live.lastError != null) P.warn else P.accent,
+                        fontSize = 11.sp
+                    )
+                }
             }
             ActionButton("Обновить", onRefresh)
             Spacer(Modifier.width(10.dp))

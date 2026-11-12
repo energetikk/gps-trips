@@ -1,6 +1,7 @@
 package ru.gpstrips.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -19,6 +20,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -30,6 +32,7 @@ fun TripDetailScreen(
     trip: Trip,
     onBack: () -> Unit,
     onSend: () -> Unit,
+    onOpenMap: () -> Unit,
     sending: Boolean
 ) {
     val speeds = trip.track.map { (it.speedKmh ?: 0.0).toFloat() }
@@ -107,6 +110,7 @@ fun TripDetailScreen(
                 .fillMaxWidth()
                 .weight(1f)
                 .clip(RoundedCornerShape(20.dp))
+                .then(if (trip.track.size >= 2) Modifier.clickable { onOpenMap() } else Modifier)
         ) {
             if (trip.track.size >= 2) {
                 TrackMap(trip.track, Modifier.fillMaxSize())
@@ -119,6 +123,22 @@ fun TripDetailScreen(
                     Text("● старт", color = P.accent, fontSize = 11.sp)
                     Spacer(Modifier.width(12.dp))
                     Text("● финиш", color = P.danger, fontSize = 11.sp)
+                }
+                Row(
+                    Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(12.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(P.accent)
+                        .padding(horizontal = 10.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        "Яндекс.Карта ›",
+                        color = Color(0xFF04231B),
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium
+                    )
                 }
             } else {
                 Column(

@@ -26,6 +26,7 @@ import ru.gpstrips.ui.P
 import ru.gpstrips.ui.SettingsScreen
 import ru.gpstrips.ui.TripDetailScreen
 import ru.gpstrips.ui.TripListScreen
+import ru.gpstrips.ui.TripMapScreen
 
 class MainActivity : ComponentActivity() {
 
@@ -43,7 +44,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-private enum class Screen { List, Detail, Settings }
+private enum class Screen { List, Detail, Settings, Map }
 
 @Composable
 private fun App(vm: AppViewModel) {
@@ -81,8 +82,17 @@ private fun App(vm: AppViewModel) {
                             screen = Screen.List
                         },
                         onSend = { vm.sendTrip(trip) },
+                        onOpenMap = { screen = Screen.Map },
                         sending = vm.state.sending
                     )
+                }
+            }
+
+            Screen.Map -> {
+                val trip = vm.state.selected
+                LaunchedEffect(trip) { if (trip == null) screen = Screen.List }
+                if (trip != null) {
+                    TripMapScreen(trip = trip, onBack = { screen = Screen.Detail })
                 }
             }
 
@@ -94,7 +104,11 @@ private fun App(vm: AppViewModel) {
                 },
                 onPickFolder = { vm.setTarget(it) },
                 onSaveTelegram = { token, chat -> vm.saveTelegram(token, chat) },
-                onSendSummary = { vm.sendSummary() }
+                onSendSummary = { vm.sendSummary() },
+                onSaveLive = { url, token, device, interval ->
+                    vm.saveLive(url, token, device, interval)
+                },
+                onToggleLive = { vm.setLiveEnabled(it) }
             )
         }
 

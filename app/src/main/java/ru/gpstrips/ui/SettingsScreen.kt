@@ -1,7 +1,10 @@
 package ru.gpstrips.ui
 
+import android.Manifest
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -20,6 +23,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -27,12 +31,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
+import ru.gpstrips.data.Fmt
+import ru.gpstrips.data.LiveState
 
 @Composable
 fun SettingsScreen(
@@ -40,12 +46,21 @@ fun SettingsScreen(
     onBack: () -> Unit,
     onPickFolder: (String) -> Unit,
     onSaveTelegram: (String, String) -> Unit,
-    onSendSummary: () -> Unit
+    onSendSummary: () -> Unit,
+    onSaveLive: (String, String, String, Int) -> Unit,
+    onToggleLive: (Boolean) -> Unit
 ) {
     val ctx = LocalContext.current
     var token by remember { mutableStateOf(state.tgToken) }
     var chat by remember { mutableStateOf(state.tgChat) }
     var manualPath by remember { mutableStateOf(state.target ?: "/storage/emulated/0/GPS") }
+
+    var liveUrl by remember { mutableStateOf(state.liveUrl) }
+    var liveToken by remember { mutableStateOf(state.liveToken) }
+    var liveDevice by remember { mutableStateOf(state.liveDevice) }
+    var liveInterval by remember { mutableStateOf(state.liveIntervalSec.toString()) }
+
+    val live by LiveState.status.collectAsState()
 
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         if (uri != null) {
@@ -56,6 +71,21 @@ fun SettingsScreen(
                 )
             }
             onPickFolder(uri.toString())
+        }
+    }
+
+    val notifications = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { onToggleLive(true) }
+
+    fun enableLive() {
+        val needsPermission = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(ctx, Manifest.permission.POST_NOTIFICATIONS) !=
+            PackageManager.PERMISSION_GRANTED
+        if (needsPermission) {
+            notifications.launch(Manifest.permission.POST_NOTIFICATIONS)
+        } else {
+            onToggleLive(true)
         }
     }
 
@@ -140,7 +170,84 @@ fun SettingsScreen(
             }
 
             Spacer(Modifier.height(20.dp))
+            SectionLabel("Передача координат на сайт")
+            Panel(Modifier.fillMaxWidth()) {
+                Field("Адрес приёма, например https://мой-сайт.ru/api/position", liveUrl) { liveUrl = it }
+                Spacer(Modifier.height(12.dp))
+                Row {
+                    Column(Modifier.weight(1f)) {
+                        Field("Токен устройства", liveToken) { liveToken = it }
+                    }
+                    Spacer(Modifier.width(10.dp))
+                    Column(Modifier.width(96.dp)) {
+                        Field("Интервал, с", liveInterval) { liveInterval = it }
+                    }
+                }
+                Spacer(Modifier.height(12.dp))
+                Field("Имя устройства", liveDevice) { liveDevice = it }
+                Spacer(Modifier.height(14.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    ActionButton(
+                        if (state.liveEnabled) "Выключить передачу" else "Включить передачу",
+                        {
+                            if (state.liveEnabled) {
+                                onToggleLive(false)
+                            } else {
+                                saveLive(liveUrl, liveToken, liveDevice, liveInterval, onSaveLive)
+                                enableLive()
+                            }
+                        },
+                        primary = !state.liveEnabled
+                    )
+                    Spacer(Modifier.width(10.dp))
+                    ActionButton(
+                        "Сохранить",
+                        { saveLive(liveUrl, liveToken, liveDevice, liveInterval, onSaveLive) }
+                    )
+                }
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    text = liveStatusText(state, live),
+                    color = when {
+                        live.lastError != null -> P.warn
+                        state.liveEnabled -> P.accent
+                        else -> P.dim
+                    },
+                    fontSize = 12.sp
+                )
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    "Приложение читает тот же лог GPS, что и список поездок, и отправляет новые " +
+                        "точки на ваш сервер. Токен должен совпадать с TRACK_TOKEN на сервере. " +
+                        "Сайт с картой — в папке server репозитория.",
+                    color = P.dim,
+                    fontSize = 12.sp
+                )
+            }
+
+            Spacer(Modifier.height(20.dp))
         }
+    }
+}
+
+private fun saveLive(
+    url: String,
+    token: String,
+    device: String,
+    interval: String,
+    onSaveLive: (String, String, String, Int) -> Unit
+) {
+    onSaveLive(url.trim(), token.trim(), device.trim(), interval.trim().toIntOrNull() ?: 3)
+}
+
+private fun liveStatusText(state: UiState, live: LiveState.Status): String = when {
+    !state.liveEnabled -> "Передача выключена"
+    live.lastError != null -> "Ошибка: ${live.lastError}"
+    live.lastFix == null -> "Включена, жду координаты из лога…"
+    else -> buildString {
+        append("Передаю · ").append(Fmt.hhmm(live.lastSentAt.takeIf { it > 0 } ?: live.lastFix.timeMs))
+        append(" · ").append(String.format(java.util.Locale.US, "%.5f, %.5f", live.lastFix.lat, live.lastFix.lon))
+        append(" · отправлено ").append(live.sentCount)
     }
 }
 

@@ -73,7 +73,7 @@ object GpxParser {
         return TrackPoint(timeMs ?: 0L, lat, lon, speed, alt)
     }
 
-    private fun parseTime(s: String): Long? {
+    internal fun parseTime(s: String): Long? {
         val v = s.trim()
         if (v.isEmpty()) return null
         return try {
