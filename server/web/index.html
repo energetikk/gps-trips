@@ -42,19 +42,59 @@
     .status {
       display: inline-flex;
       align-items: center;
-      gap: 8px;
+      gap: 9px;
       margin-left: auto;
       padding: 7px 12px;
-      border-radius: 999px;
+      border-radius: 14px;
       background: var(--surface);
       border: 1px solid var(--stroke);
       font-size: 13px;
       color: var(--dim);
-      white-space: nowrap;
+      max-width: 100%;
     }
+    .status .device-meta {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      min-width: 0;
+      line-height: 1.2;
+    }
+    .status .device-line {
+      display: flex;
+      align-items: baseline;
+      gap: 6px;
+      min-width: 0;
+    }
+    .status .device-label {
+      font-size: 9px;
+      letter-spacing: 0.7px;
+      text-transform: uppercase;
+      color: var(--dim);
+      font-weight: 600;
+    }
+    .status .device-name {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      max-width: 200px;
+    }
+    .status .device-state {
+      font-size: 11px;
+      color: var(--dim);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .status.online .device-state { color: var(--accent); }
+    .status.warn .device-state { color: var(--warn); }
+    .status.offline .device-state { color: var(--danger); }
     .dot {
       width: 9px; height: 9px; border-radius: 50%;
       background: var(--dim);
+      flex: 0 0 auto;
       box-shadow: 0 0 0 3px rgba(138, 151, 168, 0.16);
     }
     .status.online .dot { background: var(--accent); box-shadow: 0 0 0 3px rgba(56, 225, 176, 0.18); }
@@ -339,7 +379,16 @@
         <h1>GPS Поездки</h1>
         <div class="subtitle">онлайн и история маршрутов</div>
       </div>
-      <div class="status" id="status"><span class="dot"></span><span id="statusText">ожидаю данные</span></div>
+      <div class="status" id="status">
+        <span class="dot"></span>
+        <div class="device-meta">
+          <div class="device-line">
+            <span class="device-label">устройство</span>
+            <span class="device-name" id="device">не указано</span>
+          </div>
+          <div class="device-state" id="statusText">ожидаю данные</div>
+        </div>
+      </div>
     </header>
 
     <nav class="tabs">
@@ -377,10 +426,6 @@
         <div class="card">
           <div class="label">Последняя точка</div>
           <div class="value" id="updated">—</div>
-        </div>
-        <div class="card">
-          <div class="label">Устройство</div>
-          <div class="value" id="device">—</div>
         </div>
       </div>
 
@@ -759,7 +804,7 @@
           el.altitude.textContent = '—';
           el.satellites.textContent = '—';
           el.updated.textContent = '—';
-          el.device.textContent = '—';
+          el.device.textContent = 'не указано';
           return;
         }
 
@@ -775,7 +820,7 @@
           : '—';
         const at = p.received || p.ts;
         el.updated.textContent = at ? new Date(at).toLocaleTimeString('ru-RU') : '—';
-        el.device.textContent = p.device || '—';
+        el.device.textContent = p.device || 'не указано';
 
         el.openMaps.href = 'https://yandex.ru/maps/?ll=' +
           p.lon.toFixed(6) + ',' + p.lat.toFixed(6) +
