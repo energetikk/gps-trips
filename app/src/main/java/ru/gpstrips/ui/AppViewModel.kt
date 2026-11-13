@@ -8,6 +8,8 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import ru.gpstrips.data.LiveSender
@@ -43,6 +45,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     private val prefs = Prefs(app)
     private val repo = LogRepository(app)
     private var syncJob: Job? = null
+    private var refreshing = false
 
     var state by mutableStateOf(
         UiState(
@@ -63,6 +66,20 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         if (state.liveUrl.isNotBlank() && state.liveUrl != prefs.liveUrl) prefs.liveUrl = state.liveUrl
         if (state.target != null) refresh(false)
         if (state.liveEnabled) LiveTrackingService.start(app)
+        startAutoRefresh()
+    }
+
+    /**
+     * Пока приложение открыто, раз в 10 минут перечитываем логи и досылаем
+     * новые поездки: иначе история на сайте ждала бы ручного «Обновить».
+     */
+    private fun startAutoRefresh() {
+        viewModelScope.launch {
+            while (isActive) {
+                delay(AUTO_REFRESH_MS)
+                if (state.target != null && !refreshing) refresh(false, silent = true)
+            }
+        }
     }
 
     fun setTarget(value: String) {
@@ -71,26 +88,32 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         refresh(true)
     }
 
-    fun refresh(force: Boolean) {
+    fun refresh(force: Boolean, silent: Boolean = false) {
         val target = state.target
         if (target.isNullOrBlank()) {
             state = state.copy(loading = false, error = "Выберите папку с логами GPS")
             return
         }
-        state = state.copy(loading = true, error = null)
+        if (refreshing) return
+        refreshing = true
+        state = state.copy(loading = !silent, error = null)
         viewModelScope.launch {
-            val loaded = withContext(Dispatchers.IO) {
-                runCatching { repo.load(target, force) }.getOrElse {
-                    LogRepository.Loaded(emptyList(), 0, false, it.message ?: "Ошибка чтения папки")
+            try {
+                val loaded = withContext(Dispatchers.IO) {
+                    runCatching { repo.load(target, force) }.getOrElse {
+                        LogRepository.Loaded(emptyList(), 0, false, it.message ?: "Ошибка чтения папки")
+                    }
                 }
+                state = state.copy(
+                    loading = false,
+                    trips = loaded.trips,
+                    fileCount = loaded.files,
+                    error = loaded.message
+                )
+                syncTrips()
+            } finally {
+                refreshing = false
             }
-            state = state.copy(
-                loading = false,
-                trips = loaded.trips,
-                fileCount = loaded.files,
-                error = loaded.message
-            )
-            syncTrips()
         }
     }
 
@@ -137,6 +160,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             liveEnabled = enabled,
             toast = if (enabled) "Передача координат включена" else "Передача координат выключена"
         )
+        if (enabled) syncTrips()
     }
 
     fun setHistoryEnabled(enabled: Boolean) {
@@ -251,5 +275,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     fun clearToast() {
         if (state.toast != null) state = state.copy(toast = null)
+    }
+
+    companion object {
+        private const val AUTO_REFRESH_MS = 10 * 60 * 1000L
     }
 }
