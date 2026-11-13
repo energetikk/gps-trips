@@ -12,7 +12,9 @@ data class TrackPoint(
     val lat: Double,
     val lon: Double,
     val speedKmh: Double? = null,
-    val altM: Double? = null
+    val altM: Double? = null,
+    val sats: Int? = null,
+    val hdop: Double? = null
 )
 
 /** Поездка: отрезок трека, отрезанный от остальных по паузе во времени. */

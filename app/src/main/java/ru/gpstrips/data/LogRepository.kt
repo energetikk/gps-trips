@@ -152,7 +152,8 @@ class LogRepository(private val ctx: Context) {
     private fun readCache(sig: String): List<Trip>? = try {
         if (!cacheFile.exists()) null else {
             val root = JSONObject(cacheFile.readText())
-            if (root.optString("sig") != sig) null else {
+            if (root.optInt("v", 1) != 2) null
+            else if (root.optString("sig") != sig) null else {
                 val arr = root.optJSONArray("trips") ?: JSONArray()
                 val trips = ArrayList<Trip>(arr.length())
                 for (i in 0 until arr.length()) {
@@ -162,12 +163,18 @@ class LogRepository(private val ctx: Context) {
                     for (j in 0 until pa.length()) {
                         val p = pa.getJSONArray(j)
                         val v = p.optDouble(3, -1.0)
+                        val sats = p.optInt(4, -1)
+                        val hdop = p.optDouble(5, -1.0)
+                        val alt = p.optDouble(6, Double.NaN)
                         pts.add(
                             TrackPoint(
                                 timeMs = p.optLong(0),
                                 lat = p.optDouble(1),
                                 lon = p.optDouble(2),
-                                speedKmh = if (v >= 0) v else null
+                                speedKmh = if (v >= 0) v else null,
+                                altM = if (alt.isNaN()) null else alt,
+                                sats = if (sats >= 0) sats else null,
+                                hdop = if (hdop >= 0) hdop else null
                             )
                         )
                     }
@@ -195,6 +202,7 @@ class LogRepository(private val ctx: Context) {
 
     private fun writeCache(sig: String, trips: List<Trip>) {
         val root = JSONObject()
+        root.put("v", 2)
         root.put("sig", sig)
         val arr = JSONArray()
         for (t in trips) {
@@ -216,6 +224,9 @@ class LogRepository(private val ctx: Context) {
                         .put(p.lat)
                         .put(p.lon)
                         .put(p.speedKmh ?: -1.0)
+                        .put(p.sats ?: -1)
+                        .put(p.hdop ?: -1.0)
+                        .put(p.altM ?: Double.NaN)
                 )
             }
             o.put("track", pts)

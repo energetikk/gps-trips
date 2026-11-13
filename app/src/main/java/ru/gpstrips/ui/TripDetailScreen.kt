@@ -26,6 +26,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import ru.gpstrips.data.Fmt
 import ru.gpstrips.data.Trip
+import java.util.Locale
 
 @Composable
 fun TripDetailScreen(
@@ -36,6 +37,8 @@ fun TripDetailScreen(
     sending: Boolean
 ) {
     val speeds = trip.track.map { (it.speedKmh ?: 0.0).toFloat() }
+    val sats = trip.track.mapNotNull { it.sats }
+    val hdops = trip.track.mapNotNull { it.hdop }
 
     Column(
         Modifier
@@ -76,6 +79,25 @@ fun TripDetailScreen(
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
                 StatTile("средняя скорость", Fmt.speed(trip.avgSpeedKmh))
                 StatTile("максимальная", Fmt.speed(trip.maxSpeedKmh), accent = P.warn)
+            }
+            if (sats.isNotEmpty() || hdops.isNotEmpty()) {
+                Spacer(Modifier.height(14.dp))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    if (sats.isNotEmpty()) {
+                        StatTile(
+                            "спутники",
+                            String.format(Locale.US, "%.1f", sats.average()),
+                            sub = "макс ${sats.max()}"
+                        )
+                    }
+                    if (hdops.isNotEmpty()) {
+                        StatTile(
+                            "HDOP",
+                            String.format(Locale.US, "%.2f", hdops.average()),
+                            sub = "меньше — лучше"
+                        )
+                    }
+                }
             }
             if (!trip.timeReliable) {
                 Spacer(Modifier.height(12.dp))

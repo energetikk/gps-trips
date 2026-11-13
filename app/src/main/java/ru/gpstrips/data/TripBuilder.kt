@@ -14,6 +14,7 @@ object TripBuilder {
     private const val MIN_TRIP_M = 300.0
     private const val JUMP_M = 500.0
     private const val JUMP_MAX_GAP_MS = 15_000L
+    private const val MAX_KMH = 250.0
     private const val MOVING_KMH = 3.0
     private const val MIN_STEP_M = 2.0
 
@@ -33,23 +34,50 @@ object TripBuilder {
         }
         if (clean.size < 2) return emptyList()
 
-        // нарезать на сегменты: пауза по времени или выброс «телепорта»
+        // нарезать на сегменты: пауза по времени или скачок координат.
+        // Скачок на десятки километров — это либо сбой приёмника, либо другой
+        // GPS-поток; если следующая точка остаётся рядом с новой, начинаем
+        // новый сегмент, иначе выброс просто пропускаем.
         val segments = ArrayList<List<TrackPoint>>()
         var cur = ArrayList<TrackPoint>()
-        for (p in clean) {
+        var index = 0
+        while (index < clean.size) {
+            val p = clean[index]
             val prev = cur.lastOrNull()
-            if (prev != null) {
-                val dt = p.timeMs - prev.timeMs
-                if (dt > SPLIT_GAP_MS) {
+            if (prev == null) {
+                cur.add(p)
+                index++
+                continue
+            }
+
+            val dt = p.timeMs - prev.timeMs
+            if (dt > SPLIT_GAP_MS) {
+                if (cur.size > 1) segments.add(cur)
+                cur = ArrayList()
+                cur.add(p)
+                index++
+                continue
+            }
+
+            val d = Geo.distanceM(prev.lat, prev.lon, p.lat, p.lon)
+            val impliedKmh = if (dt > 0) d / (dt / 1000.0) * 3.6 else Double.MAX_VALUE
+            if (d > JUMP_M && impliedKmh > MAX_KMH) {
+                val next = clean.getOrNull(index + 1)
+                val relocation = next != null &&
+                    next.timeMs - p.timeMs <= JUMP_MAX_GAP_MS &&
+                    Geo.distanceM(p.lat, p.lon, next.lat, next.lon) <
+                    Geo.distanceM(prev.lat, prev.lon, next.lat, next.lon)
+                if (relocation) {
                     if (cur.size > 1) segments.add(cur)
                     cur = ArrayList()
-                } else if (dt < JUMP_MAX_GAP_MS &&
-                    Geo.distanceM(prev.lat, prev.lon, p.lat, p.lon) > JUMP_M
-                ) {
-                    continue // выброс приёмника
+                    cur.add(p)
                 }
+                index++
+                continue
             }
+
             cur.add(p)
+            index++
         }
         if (cur.size > 1) segments.add(cur)
 
