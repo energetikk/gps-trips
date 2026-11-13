@@ -103,6 +103,7 @@ private fun App(vm: AppViewModel) {
                     vm.refresh(false)
                 },
                 onPickFolder = { vm.setTarget(it) },
+                onMessage = { vm.showToast(it) },
                 onSaveTelegram = { token, chat -> vm.saveTelegram(token, chat) },
                 onSendSummary = { vm.sendSummary() },
                 onSaveLive = { url, token, device, interval ->

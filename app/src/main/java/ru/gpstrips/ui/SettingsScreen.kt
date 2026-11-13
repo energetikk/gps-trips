@@ -1,10 +1,12 @@
 package ru.gpstrips.ui
 
 import android.Manifest
+import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
+import android.os.Environment
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -39,12 +41,14 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import ru.gpstrips.data.Fmt
 import ru.gpstrips.data.LiveState
+import java.io.File
 
 @Composable
 fun SettingsScreen(
     state: UiState,
     onBack: () -> Unit,
     onPickFolder: (String) -> Unit,
+    onMessage: (String) -> Unit,
     onSaveTelegram: (String, String) -> Unit,
     onSendSummary: () -> Unit,
     onSaveLive: (String, String, String, Int) -> Unit,
@@ -56,6 +60,8 @@ fun SettingsScreen(
     var token by remember { mutableStateOf(state.tgToken) }
     var chat by remember { mutableStateOf(state.tgChat) }
     var manualPath by remember { mutableStateOf(state.target ?: "/storage/emulated/0/GPS") }
+    var showFolderPicker by remember { mutableStateOf(false) }
+    var pendingBrowser by remember { mutableStateOf(false) }
 
     var liveUrl by remember { mutableStateOf(state.liveUrl) }
     var liveToken by remember { mutableStateOf(state.liveToken) }
@@ -73,12 +79,120 @@ fun SettingsScreen(
                 )
             }
             onPickFolder(uri.toString())
+            onMessage("Папка выбрана")
+        }
+    }
+
+    val storagePermission = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) {
+            onMessage("Доступ к файлам разрешён")
+            if (pendingBrowser) {
+                pendingBrowser = false
+                showFolderPicker = true
+            }
+        } else {
+            pendingBrowser = false
+            onMessage(
+                "Доступ не выдан. Откройте Настройки Android → Приложения → GPS Поездки → " +
+                    "Разрешения → Память и разрешите чтение"
+            )
         }
     }
 
     val notifications = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { onToggleLive(true) }
+
+    fun readStorageGranted(): Boolean =
+        ContextCompat.checkSelfPermission(ctx, Manifest.permission.READ_EXTERNAL_STORAGE) ==
+            PackageManager.PERMISSION_GRANTED
+
+    fun allFilesGranted(): Boolean =
+        Build.VERSION.SDK_INT < Build.VERSION_CODES.R || Environment.isExternalStorageManager()
+
+    fun openAllFilesSettings() {
+        val appUri = Uri.parse("package:${ctx.packageName}")
+        val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, appUri)
+        try {
+            ctx.startActivity(intent)
+        } catch (e: ActivityNotFoundException) {
+            try {
+                ctx.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, appUri))
+            } catch (e2: ActivityNotFoundException) {
+                onMessage("Не удалось открыть настройки разрешений")
+            }
+        }
+    }
+
+    fun requestStorageAccess() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            if (Environment.isExternalStorageManager()) {
+                onMessage("Доступ к файлам уже разрешён")
+            } else {
+                onMessage("Включите «Доступ ко всем файлам», затем вернитесь в приложение")
+                openAllFilesSettings()
+            }
+        } else {
+            if (readStorageGranted()) {
+                onMessage("Доступ к файлам уже разрешён")
+            } else {
+                pendingBrowser = false
+                storagePermission.launch(Manifest.permission.READ_EXTERNAL_STORAGE)
+            }
+        }
+    }
+
+    fun openFolderBrowser() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            if (Environment.isExternalStorageManager()) {
+                showFolderPicker = true
+            } else {
+                onMessage("Разрешите доступ ко всем файлам, затем снова откройте «Обзор папок»")
+                openAllFilesSettings()
+            }
+        } else if (readStorageGranted()) {
+            showFolderPicker = true
+        } else {
+            pendingBrowser = true
+            storagePermission.launch(Manifest.permission.READ_EXTERNAL_STORAGE)
+        }
+    }
+
+    fun openSystemPicker() {
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE)
+        if (intent.resolveActivity(ctx.packageManager) == null) {
+            onMessage("Системный выбор папки на этой магнитоле недоступен — используйте «Обзор папок»")
+            return
+        }
+        try {
+            picker.launch(null)
+        } catch (e: Exception) {
+            onMessage("Не удалось открыть системный выбор папки: ${e.message ?: "ошибка"}")
+        }
+    }
+
+    fun applyManualPath() {
+        val path = manualPath.trim().trimEnd('/')
+        when {
+            path.isEmpty() -> onMessage("Введите путь к папке")
+            !path.startsWith("/") ->
+                onMessage("Путь должен начинаться с «/», например /storage/emulated/0/GPS")
+            !allFilesGranted() ->
+                onMessage("На Android 11+ разрешите «Доступ ко всем файлам» и повторите")
+            Build.VERSION.SDK_INT < Build.VERSION_CODES.R && !readStorageGranted() ->
+                onMessage("Сначала разрешите доступ к файлам")
+            !File(path).exists() -> onMessage("Папка не найдена: $path")
+            !File(path).isDirectory -> onMessage("По этому пути файл, а не папка")
+            !File(path).canRead() ->
+                onMessage("Папка есть, но нет доступа на чтение. Разрешите доступ к файлам")
+            else -> {
+                onPickFolder(path)
+                onMessage("Папка сохранена: $path")
+            }
+        }
+    }
 
     fun enableLive() {
         val needsPermission = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
@@ -114,28 +228,39 @@ fun SettingsScreen(
                     color = if (state.target == null) P.warn else P.text,
                     fontSize = 13.sp
                 )
+                if (state.loading) {
+                    Spacer(Modifier.height(6.dp))
+                    Text("Читаю логи…", color = P.dim, fontSize = 12.sp)
+                } else if (state.error != null) {
+                    Spacer(Modifier.height(6.dp))
+                    Text(state.error, color = P.warn, fontSize = 12.sp)
+                } else if (state.fileCount > 0) {
+                    Spacer(Modifier.height(6.dp))
+                    Text("Файлов найдено: ${state.fileCount}", color = P.accent, fontSize = 12.sp)
+                }
+
                 Spacer(Modifier.height(14.dp))
                 Row {
-                    ActionButton("Выбрать папку", { picker.launch(null) }, primary = true)
+                    ActionButton("Обзор папок", { openFolderBrowser() }, primary = true)
                     Spacer(Modifier.width(10.dp))
-                    ActionButton("Разрешить доступ к файлам", {
-                        val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION)
-                        intent.data = Uri.parse("package:${ctx.packageName}")
-                        runCatching { ctx.startActivity(intent) }
-                    })
+                    ActionButton("Разрешить доступ", { requestStorageAccess() })
                 }
+                Spacer(Modifier.height(10.dp))
+                ActionButton("Системный выбор папки", { openSystemPicker() })
                 Spacer(Modifier.height(16.dp))
+
                 Text("Путь вручную", color = P.dim, fontSize = 11.sp, letterSpacing = 0.6.sp)
                 Spacer(Modifier.height(6.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Field("", manualPath) { manualPath = it }
                     Spacer(Modifier.width(10.dp))
-                    ActionButton("Применить", { onPickFolder(manualPath.trim()) }, primary = true)
+                    ActionButton("Применить", { applyManualPath() }, primary = true)
                 }
                 Spacer(Modifier.height(12.dp))
                 Text(
-                    "На магнитоле системный выбор папки часто отсутствует. Тогда нажмите " +
-                        "«Разрешить доступ к файлам» и впишите путь, например /storage/emulated/0/GPS",
+                    "«Обзор папок» работает даже там, где на магнитоле нет системного выбора. " +
+                        "Для Android 9 нажмите «Разрешить доступ» и разрешите чтение памяти. " +
+                        "Для Android 11+ включите «Доступ ко всем файлам».",
                     color = P.dim,
                     fontSize = 12.sp
                 )
@@ -252,6 +377,19 @@ fun SettingsScreen(
 
             Spacer(Modifier.height(20.dp))
         }
+    }
+
+    if (showFolderPicker) {
+        FolderPickerDialog(
+            startPath = manualPath,
+            onPick = { path ->
+                showFolderPicker = false
+                manualPath = path
+                onPickFolder(path)
+                onMessage("Выбрана папка: $path")
+            },
+            onDismiss = { showFolderPicker = false }
+        )
     }
 }
 

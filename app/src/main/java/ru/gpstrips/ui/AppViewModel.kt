@@ -277,6 +277,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         if (state.toast != null) state = state.copy(toast = null)
     }
 
+    fun showToast(text: String) {
+        state = state.copy(toast = text)
+    }
+
     companion object {
         private const val AUTO_REFRESH_MS = 10 * 60 * 1000L
     }

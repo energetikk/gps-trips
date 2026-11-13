@@ -80,7 +80,7 @@ object LiveSender {
             conn.connectTimeout = 15_000
             conn.readTimeout = 20_000
             conn.setRequestProperty("Content-Type", "application/json; charset=utf-8")
-            conn.setRequestProperty("User-Agent", "GpsTrips/1.3")
+            conn.setRequestProperty("User-Agent", "GpsTrips/1.4")
             if (token.isNotBlank()) conn.setRequestProperty("X-Token", token)
             conn.outputStream.use { it.write(bytes) }
 
