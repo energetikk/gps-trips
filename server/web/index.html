@@ -466,9 +466,10 @@
       }
 
       function dayLabel(ms) {
-        return new Date(ms).toLocaleDateString('ru-RU', {
-          weekday: 'short', day: 'numeric', month: 'long',
-        });
+        const date = new Date(ms);
+        const options = { weekday: 'short', day: 'numeric', month: 'long' };
+        if (date.getFullYear() !== new Date().getFullYear()) options.year = 'numeric';
+        return date.toLocaleDateString('ru-RU', options);
       }
 
       function fmtKm(meters) {
