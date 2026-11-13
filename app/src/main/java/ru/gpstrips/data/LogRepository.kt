@@ -165,14 +165,14 @@ class LogRepository(private val ctx: Context) {
                         val v = p.optDouble(3, -1.0)
                         val sats = p.optInt(4, -1)
                         val hdop = p.optDouble(5, -1.0)
-                        val alt = p.optDouble(6, Double.NaN)
+                        val alt = p.optDouble(6, -99999.0)
                         pts.add(
                             TrackPoint(
                                 timeMs = p.optLong(0),
                                 lat = p.optDouble(1),
                                 lon = p.optDouble(2),
                                 speedKmh = if (v >= 0) v else null,
-                                altM = if (alt.isNaN()) null else alt,
+                                altM = if (alt <= -99999.0) null else alt,
                                 sats = if (sats >= 0) sats else null,
                                 hdop = if (hdop >= 0) hdop else null
                             )
@@ -226,7 +226,7 @@ class LogRepository(private val ctx: Context) {
                         .put(p.speedKmh ?: -1.0)
                         .put(p.sats ?: -1)
                         .put(p.hdop ?: -1.0)
-                        .put(p.altM ?: Double.NaN)
+                        .put(p.altM ?: -99999.0)
                 )
             }
             o.put("track", pts)
