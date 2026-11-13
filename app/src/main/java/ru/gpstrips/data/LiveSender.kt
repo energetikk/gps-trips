@@ -32,6 +32,9 @@ object LiveSender {
         append("\"lat\":").append(fix.lat)
         append(",\"lon\":").append(fix.lon)
         fix.speedKmh?.let { append(",\"speed_kmh\":").append(it) }
+        fix.altM?.let { append(",\"alt\":").append(it) }
+        fix.sats?.let { append(",\"sats\":").append(it) }
+        fix.hdop?.let { append(",\"hdop\":").append(it) }
         append(",\"ts\":").append(fix.timeMs)
         append(",\"device\":").append(json(device))
         append(",\"source\":").append(json(fix.source))
@@ -56,6 +59,8 @@ object LiveSender {
             append('[').append(p.timeMs).append(',').append(p.lat).append(',')
                 .append(p.lon).append(',')
             p.speedKmh?.let { append(it) } ?: append("null")
+            append(',')
+            p.altM?.let { append(it) } ?: append("null")
             append(']')
         }
         append("]}")
@@ -80,7 +85,7 @@ object LiveSender {
             conn.connectTimeout = 15_000
             conn.readTimeout = 20_000
             conn.setRequestProperty("Content-Type", "application/json; charset=utf-8")
-            conn.setRequestProperty("User-Agent", "GpsTrips/1.5")
+            conn.setRequestProperty("User-Agent", "GpsTrips/1.6")
             if (token.isNotBlank()) conn.setRequestProperty("X-Token", token)
             conn.outputStream.use { it.write(bytes) }
 

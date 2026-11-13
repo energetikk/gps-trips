@@ -49,15 +49,15 @@ class LiveTest {
             avgSpeedKmh = 48.2,
             timeReliable = true,
             track = listOf(
-                TrackPoint(1_700_000_000_000L, 56.1, 44.1, 40.0),
+                TrackPoint(1_700_000_000_000L, 56.1, 44.1, 40.0, altM = 150.0),
                 TrackPoint(1_700_000_030_000L, 56.2, 44.2, null)
             )
         )
         val json = LiveSender.tripPayload(trip, "car")
         assertTrue(json.contains("\"id\":\"log.nmea@1700000000000\""))
         assertTrue(json.contains("\"startMs\":1700000000000"))
-        assertTrue(json.contains("\"track\":[[1700000000000,56.1,44.1,40.0]"))
-        assertTrue(json.contains("[1700000030000,56.2,44.2,null]"))
+        assertTrue(json.contains("\"track\":[[1700000000000,56.1,44.1,40.0,150.0]"))
+        assertTrue(json.contains("[1700000030000,56.2,44.2,null,null]"))
         assertTrue(json.contains("\"timeReliable\":true"))
     }
 
@@ -68,12 +68,18 @@ class LiveTest {
             lon = 44.002456,
             speedKmh = 42.5,
             timeMs = 1_700_000_000_000L,
-            source = "log \"today\".nmea"
+            source = "log \"today\".nmea",
+            altM = 150.0,
+            sats = 9,
+            hdop = 1.1
         )
         val json = LiveSender.payload(fix, "car")
         assertTrue(json.contains("\"lat\":56.326123"))
         assertTrue(json.contains("\"lon\":44.002456"))
         assertTrue(json.contains("\"speed_kmh\":42.5"))
+        assertTrue(json.contains("\"alt\":150.0"))
+        assertTrue(json.contains("\"sats\":9"))
+        assertTrue(json.contains("\"hdop\":1.1"))
         assertTrue(json.contains("\"device\":\"car\""))
         assertTrue(json.contains("log \\\"today\\\".nmea"))
     }

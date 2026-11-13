@@ -257,6 +257,29 @@
     }
     .trip-note { margin-top: 10px; color: var(--warn); font-size: 12px; }
 
+    .charts {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-top: 12px;
+    }
+    .chart-card { padding: 10px 12px; }
+    .chart-head {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 8px;
+      color: var(--dim);
+      font-size: 12px;
+    }
+    .chart-head .title { color: var(--text); font-size: 13px; font-weight: 600; }
+    .chart { width: 100%; height: 150px; display: block; }
+
+    @media (max-width: 900px) {
+      .charts { grid-template-columns: 1fr; }
+    }
+
     .gate {
       position: fixed;
       inset: 0;
@@ -344,6 +367,14 @@
           <div class="value" id="speed">—</div>
         </div>
         <div class="card">
+          <div class="label">Высота</div>
+          <div class="value" id="altitude">—</div>
+        </div>
+        <div class="card">
+          <div class="label">Спутники</div>
+          <div class="value" id="satellites">—</div>
+        </div>
+        <div class="card">
           <div class="label">Последняя точка</div>
           <div class="value" id="updated">—</div>
         </div>
@@ -383,6 +414,22 @@
             <div class="placeholder" id="routePlaceholder">Выберите поездку из списка</div>
           </div>
           <div class="trip-stats" id="tripStats"></div>
+          <div class="charts">
+            <div class="card chart-card">
+              <div class="chart-head">
+                <span class="title">Скорость</span>
+                <span id="speedRange">—</span>
+              </div>
+              <canvas id="speedChart" class="chart"></canvas>
+            </div>
+            <div class="card chart-card">
+              <div class="chart-head">
+                <span class="title">Высота</span>
+                <span id="altRange">—</span>
+              </div>
+              <canvas id="altChart" class="chart"></canvas>
+            </div>
+          </div>
           <div class="trip-note hidden" id="tripNote">В файле нет корректного времени: длительность и скорости приблизительны.</div>
         </div>
       </div>
@@ -428,6 +475,8 @@
         statusText: document.getElementById('statusText'),
         coords: document.getElementById('coords'),
         speed: document.getElementById('speed'),
+        altitude: document.getElementById('altitude'),
+        satellites: document.getElementById('satellites'),
         updated: document.getElementById('updated'),
         device: document.getElementById('device'),
         openMaps: document.getElementById('openMaps'),
@@ -443,6 +492,10 @@
         tripMapsLink: document.getElementById('tripMapsLink'),
         tripStats: document.getElementById('tripStats'),
         tripNote: document.getElementById('tripNote'),
+        speedChart: document.getElementById('speedChart'),
+        altChart: document.getElementById('altChart'),
+        speedRange: document.getElementById('speedRange'),
+        altRange: document.getElementById('altRange'),
         refreshTrips: document.getElementById('refreshTrips'),
         backToLive: document.getElementById('backToLive'),
       };
@@ -703,6 +756,8 @@
         if (!p) {
           el.coords.textContent = '—';
           el.speed.textContent = '—';
+          el.altitude.textContent = '—';
+          el.satellites.textContent = '—';
           el.updated.textContent = '—';
           el.device.textContent = '—';
           return;
@@ -711,6 +766,12 @@
         el.coords.textContent = p.lat.toFixed(6) + ', ' + p.lon.toFixed(6);
         el.speed.textContent = Number.isFinite(+p.speed_kmh) && p.speed_kmh !== null
           ? Math.round(p.speed_kmh) + ' км/ч'
+          : '—';
+        el.altitude.textContent = p.alt !== null && p.alt !== undefined && Number.isFinite(+p.alt)
+          ? Math.round(p.alt) + ' м'
+          : '—';
+        el.satellites.textContent = p.sats !== null && p.sats !== undefined && Number.isFinite(+p.sats)
+          ? Math.round(p.sats)
           : '—';
         const at = p.received || p.ts;
         el.updated.textContent = at ? new Date(at).toLocaleTimeString('ru-RU') : '—';
@@ -809,6 +870,127 @@
         el.routePlaceholder.classList.add('hidden');
       }
 
+      function trackSeries(trip) {
+        const points = [];
+        let dist = 0;
+        let prev = null;
+        for (const raw of trip.track || []) {
+          if (!Array.isArray(raw) || raw.length < 3) continue;
+          const timeMs = Number(raw[0]);
+          const lat = Number(raw[1]);
+          const lon = Number(raw[2]);
+          if (!Number.isFinite(timeMs) || !Number.isFinite(lat) || !Number.isFinite(lon)) continue;
+          if (prev) dist += distanceM(prev, { lat: lat, lon: lon });
+          const speedRaw = raw.length > 3 ? raw[3] : null;
+          const altRaw = raw.length > 4 ? raw[4] : null;
+          points.push({
+            timeMs: timeMs,
+            dist: dist,
+            speed: speedRaw !== null && speedRaw !== undefined && Number.isFinite(Number(speedRaw))
+              ? Number(speedRaw)
+              : null,
+            alt: altRaw !== null && altRaw !== undefined && Number.isFinite(Number(altRaw))
+              ? Number(altRaw)
+              : null,
+          });
+          prev = { lat: lat, lon: lon };
+        }
+        for (let i = 1; i < points.length; i++) {
+          if (points[i].speed == null) {
+            const dt = (points[i].timeMs - points[i - 1].timeMs) / 1000;
+            if (dt > 0) points[i].speed = (points[i].dist - points[i - 1].dist) / dt * 3.6;
+          }
+        }
+        return points;
+      }
+
+      function drawChart(canvas, points, key, color, rangeEl, unit, emptyText) {
+        const rect = canvas.getBoundingClientRect();
+        const dpr = window.devicePixelRatio || 1;
+        const width = Math.max(1, Math.round(rect.width));
+        const height = Math.max(1, Math.round(rect.height));
+        canvas.width = Math.round(width * dpr);
+        canvas.height = Math.round(height * dpr);
+        const ctx = canvas.getContext('2d');
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        ctx.clearRect(0, 0, width, height);
+
+        const usable = [];
+        for (const p of points) {
+          if (Number.isFinite(p[key])) usable.push({ dist: p.dist, value: p[key] });
+        }
+        if (usable.length < 2) {
+          rangeEl.textContent = emptyText;
+          return;
+        }
+
+        const maxDist = Math.max(1, points[points.length - 1].dist);
+        let minV = Math.min(...usable.map((p) => p.value));
+        let maxV = Math.max(...usable.map((p) => p.value));
+        if (maxV - minV < 1) maxV = minV + 1;
+        const pad = (maxV - minV) * 0.12;
+        const yMin = minV - pad;
+        const yMax = maxV + pad;
+
+        const left = 36;
+        const right = 6;
+        const top = 8;
+        const bottom = 20;
+        const plotW = Math.max(1, width - left - right);
+        const plotH = Math.max(1, height - top - bottom);
+        const x = (d) => left + (d / maxDist) * plotW;
+        const y = (v) => top + (1 - (v - yMin) / (yMax - yMin)) * plotH;
+
+        ctx.font = '10px system-ui, sans-serif';
+        ctx.lineWidth = 1;
+        for (let i = 0; i <= 2; i++) {
+          const v = yMin + (yMax - yMin) * (i / 2);
+          const yy = y(v);
+          ctx.strokeStyle = 'rgba(138, 151, 168, 0.16)';
+          ctx.beginPath();
+          ctx.moveTo(left, yy);
+          ctx.lineTo(width - right, yy);
+          ctx.stroke();
+          ctx.fillStyle = '#8a97a8';
+          ctx.fillText(Math.round(v) + (i === 2 ? ' ' + unit : ''), 2, yy + 3);
+        }
+
+        ctx.beginPath();
+        ctx.moveTo(x(usable[0].dist), y(usable[0].value));
+        for (let i = 1; i < usable.length; i++) ctx.lineTo(x(usable[i].dist), y(usable[i].value));
+        const last = usable[usable.length - 1];
+        ctx.lineTo(x(last.dist), height - bottom);
+        ctx.lineTo(x(usable[0].dist), height - bottom);
+        ctx.closePath();
+        const fill = ctx.createLinearGradient(0, top, 0, height - bottom);
+        fill.addColorStop(0, color + '55');
+        fill.addColorStop(1, color + '05');
+        ctx.fillStyle = fill;
+        ctx.fill();
+
+        ctx.beginPath();
+        ctx.moveTo(x(usable[0].dist), y(usable[0].value));
+        for (let i = 1; i < usable.length; i++) ctx.lineTo(x(usable[i].dist), y(usable[i].value));
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 2;
+        ctx.lineJoin = 'round';
+        ctx.lineCap = 'round';
+        ctx.stroke();
+
+        ctx.fillStyle = '#8a97a8';
+        ctx.fillText('0', left, height - 4);
+        const distLabel = (maxDist / 1000).toFixed(1) + ' км';
+        ctx.fillText(distLabel, width - right - ctx.measureText(distLabel).width, height - 4);
+
+        rangeEl.textContent = Math.round(minV) + '–' + Math.round(maxV) + ' ' + unit;
+      }
+
+      function renderCharts(trip) {
+        const points = trip ? trackSeries(trip) : [];
+        drawChart(el.speedChart, points, 'speed', '#38E1B0', el.speedRange, 'км/ч', 'нет данных');
+        drawChart(el.altChart, points, 'alt', '#4C8DFF', el.altRange, 'м', 'нет данных о высоте');
+      }
+
       function renderTripDetail(trip) {
         el.routePlaceholder.classList.add('hidden');
 
@@ -831,6 +1013,7 @@
           el.tripStats.appendChild(card);
         }
         el.tripNote.classList.toggle('hidden', trip.timeReliable !== false);
+        renderCharts(trip);
 
         const pts = tripPoints(trip);
         if (pts.length >= 2) {
@@ -958,6 +1141,7 @@
           loadTrips(false);
           setTimeout(function () {
             if (state.selectedTrip) renderRouteMap(state.selectedTrip);
+            if (state.selectedTrip) renderCharts(state.selectedTrip);
             if (routeMap) routeMap.container.fitToViewport();
           }, 250);
         } else {
@@ -1016,6 +1200,7 @@
       window.addEventListener('resize', function () {
         if (liveMap) liveMap.container.fitToViewport();
         if (routeMap) routeMap.container.fitToViewport();
+        if (state.selectedTrip) renderCharts(state.selectedTrip);
       });
 
       if (location.hash === '#history') switchTab('history', false);

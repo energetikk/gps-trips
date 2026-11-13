@@ -130,6 +130,9 @@ function handlePosition(req, res) {
         lat: fix.lat,
         lon: fix.lon,
         speed_kmh: fix.speed,
+        alt: fix.alt,
+        sats: fix.sats,
+        hdop: fix.hdop,
         heading: fix.heading,
         ts: fix.ts,
         device: fix.device,
@@ -277,10 +280,31 @@ function normalizeFix(body) {
     heading = Math.round(v);
   }
 
+  let alt = null;
+  if (body.alt !== undefined && body.alt !== null) {
+    const v = Number(body.alt);
+    if (Number.isFinite(v) && v >= -1000 && v <= 10_000) alt = Math.round(v * 10) / 10;
+  }
+
+  let sats = null;
+  if (body.sats !== undefined && body.sats !== null) {
+    const v = Number(body.sats);
+    if (Number.isFinite(v) && v >= 0 && v <= 64) sats = Math.round(v);
+  }
+
+  let hdop = null;
+  if (body.hdop !== undefined && body.hdop !== null) {
+    const v = Number(body.hdop);
+    if (Number.isFinite(v) && v >= 0 && v <= 100) hdop = Math.round(v * 100) / 100;
+  }
+
   return {
     lat,
     lon,
     speed,
+    alt,
+    sats,
+    hdop,
     heading,
     ts: normalizeTs(body.ts),
     device: String(body.device || 'car').slice(0, 64),
@@ -310,7 +334,12 @@ function normalizeTrip(body) {
       const v = Number(p[3]);
       if (Number.isFinite(v) && v >= 0 && v <= 500) speed = Math.round(v * 10) / 10;
     }
-    track.push([Math.round(t), lat, lon, speed]);
+    let alt = null;
+    if (p.length > 4 && p[4] !== null && p[4] !== undefined) {
+      const v = Number(p[4]);
+      if (Number.isFinite(v) && v >= -1000 && v <= 10_000) alt = Math.round(v * 10) / 10;
+    }
+    track.push([Math.round(t), lat, lon, speed, alt]);
   }
   if (track.length < 2) return null;
 

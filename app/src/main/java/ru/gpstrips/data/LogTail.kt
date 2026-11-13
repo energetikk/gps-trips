@@ -6,7 +6,10 @@ data class LiveFix(
     val lon: Double,
     val speedKmh: Double?,
     val timeMs: Long,
-    val source: String
+    val source: String,
+    val altM: Double? = null,
+    val sats: Int? = null,
+    val hdop: Double? = null
 )
 
 /**
@@ -76,7 +79,16 @@ class LogTail(private val ctx: android.content.Context) {
             if (src.modified > 0) src.modified else System.currentTimeMillis()
         ).atZone(java.time.ZoneId.systemDefault()).toLocalDate()
         val last = NmeaParser.parse(complete, date).lastOrNull() ?: return null
-        return LiveFix(last.lat, last.lon, last.speedKmh, last.timeMs, src.name)
+        return LiveFix(
+            lat = last.lat,
+            lon = last.lon,
+            speedKmh = last.speedKmh,
+            timeMs = last.timeMs,
+            source = src.name,
+            altM = last.altM,
+            sats = last.sats,
+            hdop = last.hdop
+        )
     }
 
     private fun valid(lat: Double, lon: Double): Boolean =
