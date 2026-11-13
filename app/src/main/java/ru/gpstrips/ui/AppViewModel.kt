@@ -249,7 +249,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         return out
     }
 
-    private fun signature(trip: Trip): String = "${trip.endMs}:${trip.track.size}"
+    private fun signature(trip: Trip): String = "v2:${trip.endMs}:${trip.track.size}"
 
     fun sendSummary() {
         send(Report.summary(state.trips))
