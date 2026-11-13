@@ -3,7 +3,11 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#07090c" />
   <title>GPS Поездки · онлайн и история</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+  <link rel="icon" href="/favicon.png" type="image/png" sizes="192x192" />
+  <link rel="apple-touch-icon" href="/favicon.png" />
   <style>
     :root {
       --bg: #07090c;
@@ -95,16 +99,13 @@
       max-height: 72vh;
       margin: 0 auto;
     }
-    .mapwrap img {
+    .ymap {
       position: absolute;
       inset: 0;
       width: 100%;
       height: 100%;
-      object-fit: cover;
-      opacity: 0;
-      transition: opacity 0.25s ease;
+      background: #dfe6ec;
     }
-    .mapwrap img.ready { opacity: 1; }
     .placeholder {
       position: absolute;
       inset: 0;
@@ -114,50 +115,43 @@
       font-size: 15px;
       text-align: center;
       padding: 24px;
+      background: rgba(7, 9, 12, 0.78);
+      z-index: 2;
     }
     .placeholder.hidden { display: none; }
-    .attribution {
-      position: absolute;
-      left: 10px;
-      bottom: 8px;
-      font-size: 11px;
-      color: var(--dim);
-      background: rgba(7, 9, 12, 0.72);
-      padding: 3px 7px;
-      border-radius: 6px;
-    }
     .openmaps {
-      position: absolute;
-      right: 10px;
-      bottom: 8px;
+      z-index: 3;
       font-size: 12px;
       color: #04231b;
       background: var(--accent);
-      padding: 6px 10px;
+      padding: 7px 11px;
       border-radius: 9px;
       text-decoration: none;
       font-weight: 600;
       box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+      white-space: nowrap;
     }
-    .zoom {
-      position: absolute;
-      right: 10px;
-      top: 10px;
+    .mapbar {
       display: flex;
-      flex-direction: column;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+    .follow {
+      display: inline-flex;
+      align-items: center;
       gap: 6px;
-    }
-    .zoom button {
-      width: 38px; height: 38px;
-      border-radius: 10px;
+      padding: 6px 10px;
+      border-radius: 9px;
       border: 1px solid var(--stroke);
-      background: rgba(18, 22, 28, 0.92);
+      background: var(--surface);
       color: var(--text);
-      font-size: 20px;
-      line-height: 1;
+      font-size: 12px;
       cursor: pointer;
+      user-select: none;
     }
-    .zoom button:active { background: var(--surface2); }
+    .follow input { accent-color: var(--accent); margin: 0; }
 
     .info {
       display: grid;
@@ -178,7 +172,7 @@
       color: var(--dim);
       margin-bottom: 4px;
     }
-    .card .value { font-size: 17px; font-weight: 600; }
+    .card .value { font-size: 17px; font-weight: 600; overflow-wrap: anywhere; }
     .card .value.mono { font-variant-numeric: tabular-nums; }
     .hint { margin-top: 12px; color: var(--dim); font-size: 12px; }
     .hint a { color: var(--accent2); }
@@ -209,8 +203,8 @@
       font-weight: 600;
       flex: 0 0 auto;
     }
-    .panel-actions { display: flex; gap: 6px; }
     .panel-head .count { color: var(--dim); font-weight: 400; font-size: 12px; }
+    .panel-actions { display: flex; gap: 6px; }
     .ghost {
       border: 1px solid var(--stroke);
       background: var(--surface2);
@@ -331,15 +325,13 @@
     </nav>
 
     <section id="tab-live">
-      <div class="mapwrap">
-        <img id="map" alt="Карта с текущим местоположением" />
-        <div class="placeholder" id="placeholder">Ожидаю координаты с автомобиля…</div>
-        <div class="attribution">© Яндекс.Карты</div>
-        <div class="zoom">
-          <button type="button" id="zoomIn" aria-label="Приблизить">+</button>
-          <button type="button" id="zoomOut" aria-label="Отдалить">−</button>
-        </div>
+      <div class="mapbar">
+        <label class="follow"><input type="checkbox" id="followToggle" checked /> следить за точкой</label>
         <a class="openmaps" id="openMaps" href="#" target="_blank" rel="noopener">Открыть в Яндекс.Картах</a>
+      </div>
+      <div class="mapwrap">
+        <div id="liveMap" class="ymap"></div>
+        <div class="placeholder" id="placeholder">Ожидаю координаты с автомобиля…</div>
       </div>
 
       <div class="info">
@@ -362,8 +354,8 @@
       </div>
 
       <p class="hint">
-        Страница обновляется автоматически. Положение приходит из приложения «GPS Поездки»;
-        настройка отправки — в разделе «Передача координат на сайт».
+        Карту можно двигать и приближать, колесо мыши и жесты работают. Положение приходит
+        из приложения «GPS Поездки»; настройка отправки — в разделе «Передача координат на сайт».
       </p>
     </section>
 
@@ -382,11 +374,13 @@
         </aside>
 
         <div class="trip-detail">
-          <div class="mapwrap trip-mapwrap">
-            <img id="routeMap" alt="Маршрут поездки" />
-            <div class="placeholder" id="routePlaceholder">Выберите поездку из списка</div>
-            <div class="attribution">© Яндекс.Карты</div>
+          <div class="mapbar">
+            <span></span>
             <a class="openmaps" id="tripMapsLink" href="#" target="_blank" rel="noopener">Открыть в Яндекс.Картах</a>
+          </div>
+          <div class="mapwrap trip-mapwrap">
+            <div id="routeMap" class="ymap"></div>
+            <div class="placeholder" id="routePlaceholder">Выберите поездку из списка</div>
           </div>
           <div class="trip-stats" id="tripStats"></div>
           <div class="trip-note hidden" id="tripNote">В файле нет корректного времени: длительность и скорости приблизительны.</div>
@@ -410,20 +404,12 @@
       'use strict';
 
       const POLL_MS = 2000;
-      const MOVE_UPDATE_M = 8;
-      const MAX_TRAIL_POINTS = 80;
-      const MAX_ROUTE_POINTS = 80;
-      const ZOOM_MIN = 3;
-      const ZOOM_MAX = 19;
       const TRIPS_REFRESH_MS = 60000;
+      const MAX_TRAIL_POINTS = 300;
 
       const state = {
         pos: null,
         trail: [],
-        zoom: 16,
-        mapUrl: '',
-        mapCenter: null,
-        zoomChanged: false,
         lastError: null,
         password: sessionStorage.getItem('gps-view-password') || '',
         gated: false,
@@ -431,12 +417,12 @@
         trips: [],
         tripsLoadedAt: 0,
         tripsLoading: false,
+        tripsSignature: '',
         selectedTripId: null,
-        routeUrl: '',
+        selectedTrip: null,
       };
 
       const el = {
-        map: document.getElementById('map'),
         placeholder: document.getElementById('placeholder'),
         status: document.getElementById('status'),
         statusText: document.getElementById('statusText'),
@@ -445,6 +431,7 @@
         updated: document.getElementById('updated'),
         device: document.getElementById('device'),
         openMaps: document.getElementById('openMaps'),
+        followToggle: document.getElementById('followToggle'),
         gate: document.getElementById('gate'),
         gateForm: document.getElementById('gateForm'),
         gateInput: document.getElementById('gateInput'),
@@ -452,7 +439,6 @@
         tripList: document.getElementById('tripList'),
         tripCount: document.getElementById('tripCount'),
         tripEmpty: document.getElementById('tripEmpty'),
-        routeMap: document.getElementById('routeMap'),
         routePlaceholder: document.getElementById('routePlaceholder'),
         tripMapsLink: document.getElementById('tripMapsLink'),
         tripStats: document.getElementById('tripStats'),
@@ -460,6 +446,14 @@
         refreshTrips: document.getElementById('refreshTrips'),
         backToLive: document.getElementById('backToLive'),
       };
+
+      let ymapsReady = false;
+      let liveMap = null;
+      let routeMap = null;
+      let livePlacemark = null;
+      let livePolyline = null;
+      let follow = true;
+      let programmaticMove = false;
 
       // ---------- общее ----------
 
@@ -498,6 +492,15 @@
         return Math.round(Number(v) || 0) + ' км/ч';
       }
 
+      function distanceM(a, b) {
+        const R = 6371000;
+        const dLat = (b.lat - a.lat) * Math.PI / 180;
+        const dLon = (b.lon - a.lon) * Math.PI / 180;
+        const h = Math.sin(dLat / 2) ** 2 +
+          Math.cos(a.lat * Math.PI / 180) * Math.cos(b.lat * Math.PI / 180) * Math.sin(dLon / 2) ** 2;
+        return 2 * R * Math.asin(Math.min(1, Math.sqrt(h)));
+      }
+
       function showGate(message) {
         const wasHidden = el.gate.classList.contains('hidden');
         el.gate.classList.remove('hidden');
@@ -526,89 +529,141 @@
         return res.json();
       }
 
-      // ---------- вкладки ----------
+      // ---------- карты Яндекс.Карт ----------
 
-      function switchTab(tab, push) {
-        if (tab !== 'history') tab = 'live';
-        state.tab = tab;
-        document.querySelectorAll('.tab').forEach(function (button) {
-          button.classList.toggle('active', button.dataset.tab === tab);
+      function loadScript(src) {
+        return new Promise(function (resolve, reject) {
+          const script = document.createElement('script');
+          script.src = src;
+          script.async = true;
+          script.onload = function () { resolve(); };
+          script.onerror = function () { reject(new Error('Не удалось загрузить Яндекс.Карты')); };
+          document.head.appendChild(script);
         });
-        document.getElementById('tab-live').hidden = tab !== 'live';
-        document.getElementById('tab-history').hidden = tab !== 'history';
-        if (push !== false) {
-          const hash = '#' + tab;
-          if (location.hash !== hash) history.pushState({ tab: tab }, '', hash);
+      }
+
+      async function initMaps() {
+        let key = '';
+        try {
+          const config = await fetch('/api/config', { cache: 'no-store' }).then(function (r) {
+            return r.ok ? r.json() : {};
+          });
+          key = (config && config.ymapsKey) || '';
+        } catch (e) {
+          /* ключ не обязателен */
         }
-        window.scrollTo(0, 0);
-        if (tab === 'history') loadTrips(false);
+
+        const src = 'https://api-maps.yandex.ru/2.1/?lang=ru_RU' +
+          (key ? '&apikey=' + encodeURIComponent(key) : '');
+        await loadScript(src);
+        await new Promise(function (resolve, reject) {
+          if (!window.ymaps) { reject(new Error('Яндекс.Карты не загрузились')); return; }
+          ymaps.ready(resolve);
+        });
+
+        ymapsReady = true;
+        if (state.tab === 'live') {
+          ensureLiveMap();
+        } else if (state.selectedTrip) {
+          renderRouteMap(state.selectedTrip);
+        }
       }
 
-      document.querySelectorAll('.tab').forEach(function (button) {
-        button.addEventListener('click', function () { switchTab(button.dataset.tab); });
-      });
+      function ensureLiveMap() {
+        if (liveMap || !ymapsReady) return;
+        const node = document.getElementById('liveMap');
+        if (!node || node.offsetWidth < 20) return;
 
-      // ---------- онлайн ----------
+        liveMap = new ymaps.Map(node, {
+          center: [56.326, 44.002],
+          zoom: 15,
+          controls: ['zoomControl', 'fullscreenControl'],
+        }, { suppressMapOpenBlock: true });
+        liveMap.behaviors.enable(['drag', 'scrollZoom', 'dblClickZoom', 'multiTouch']);
 
-      function distanceM(a, b) {
-        const R = 6371000;
-        const dLat = (b.lat - a.lat) * Math.PI / 180;
-        const dLon = (b.lon - a.lon) * Math.PI / 180;
-        const h = Math.sin(dLat / 2) ** 2 +
-          Math.cos(a.lat * Math.PI / 180) * Math.cos(b.lat * Math.PI / 180) * Math.sin(dLon / 2) ** 2;
-        return 2 * R * Math.asin(Math.min(1, Math.sqrt(h)));
+        livePolyline = new ymaps.Polyline([[56.326, 44.002], [56.326, 44.002]], {}, {
+          strokeColor: '#38E1B0',
+          strokeWidth: 5,
+          strokeOpacity: 0.9,
+        });
+        livePolyline.options.set('visible', false);
+        liveMap.geoObjects.add(livePolyline);
+
+        livePlacemark = new ymaps.Placemark([56.326, 44.002], {
+          hintContent: 'Текущая позиция',
+        }, {
+          preset: 'islands#redCircleDotIcon',
+        });
+        livePlacemark.options.set('visible', false);
+        liveMap.geoObjects.add(livePlacemark);
+
+        liveMap.events.add('actionbegin', function () {
+          if (!programmaticMove) setFollow(false);
+        });
+        updateLiveMap();
       }
 
-      function liveMapUrl() {
+      function ensureRouteMap() {
+        if (routeMap || !ymapsReady) return;
+        const node = document.getElementById('routeMap');
+        if (!node || node.offsetWidth < 20) return;
+
+        routeMap = new ymaps.Map(node, {
+          center: [56.326, 44.002],
+          zoom: 12,
+          controls: ['zoomControl', 'fullscreenControl'],
+        }, { suppressMapOpenBlock: true });
+        routeMap.behaviors.enable(['drag', 'scrollZoom', 'dblClickZoom', 'multiTouch']);
+      }
+
+      function centerOnLive(pos) {
+        if (!liveMap) return;
+        programmaticMove = true;
+        liveMap.setCenter([pos.lat, pos.lon], liveMap.getZoom() || 15, { duration: 350 });
+        setTimeout(function () { programmaticMove = false; }, 650);
+      }
+
+      function setFollow(value) {
+        follow = value;
+        el.followToggle.checked = value;
+        if (value) {
+          ensureLiveMap();
+          if (liveMap && state.pos) centerOnLive(state.pos);
+        }
+      }
+
+      function updateLiveMap() {
+        if (!liveMap) return;
         const p = state.pos;
-        if (!p) return '';
-        const q = new URLSearchParams();
-        q.set('ll', p.lon.toFixed(6) + ',' + p.lat.toFixed(6));
-        q.set('z', String(state.zoom));
-        q.set('size', '650,450');
-        q.set('l', 'map');
-        q.set('pt', p.lon.toFixed(6) + ',' + p.lat.toFixed(6) + ',pm2rdm');
+        if (!p) {
+          livePlacemark.options.set('visible', false);
+          livePolyline.options.set('visible', false);
+          el.placeholder.classList.remove('hidden');
+          return;
+        }
 
-        const points = [];
+        el.placeholder.classList.add('hidden');
+        const point = [p.lat, p.lon];
+        livePlacemark.geometry.setCoordinates(point);
+        livePlacemark.options.set('visible', true);
+
+        const trail = [];
         for (const t of state.trail) {
           const lat = +t.lat;
           const lon = +t.lon;
-          if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
-          const pair = lon.toFixed(6) + ',' + lat.toFixed(6);
-          if (points.length && points[points.length - 1] === pair) continue;
-          points.push(pair);
+          if (Number.isFinite(lat) && Number.isFinite(lon)) trail.push([lat, lon]);
         }
-        const trail = points.slice(-MAX_TRAIL_POINTS);
-        if (trail.length >= 2) q.set('pl', 'c:38E1B0,w:4,' + trail.join(','));
-        return 'https://static-maps.yandex.ru/1.x/?' + q.toString();
-      }
+        const hasTrail = trail.length >= 2;
+        livePolyline.geometry.set(hasTrail ? trail.slice(-MAX_TRAIL_POINTS) : [point, point]);
+        livePolyline.options.set('visible', hasTrail);
 
-      function renderLiveMap(force) {
-        const url = liveMapUrl();
-        if (!url) return;
-        if (!force && url === state.mapUrl) return;
-
-        if (!force && state.pos && state.mapCenter && !state.zoomChanged) {
-          if (distanceM(state.mapCenter, state.pos) < MOVE_UPDATE_M) return;
+        if (follow) {
+          const center = liveMap.getCenter();
+          if (distanceM({ lat: center[0], lon: center[1] }, p) > 8) centerOnLive(p);
         }
-        state.mapUrl = url;
-        state.zoomChanged = false;
-        state.mapCenter = state.pos ? { lat: state.pos.lat, lon: state.pos.lon } : null;
-
-        const probe = new Image();
-        probe.onload = function () {
-          el.map.src = url;
-          el.map.classList.add('ready');
-        };
-        probe.onerror = function () { state.mapUrl = ''; };
-        probe.src = url;
       }
 
-      function ageText(seconds) {
-        if (seconds < 60) return Math.round(seconds) + ' с назад';
-        if (seconds < 3600) return Math.round(seconds / 60) + ' мин назад';
-        return Math.round(seconds / 3600) + ' ч назад';
-      }
+      // ---------- онлайн ----------
 
       function renderStatus() {
         const p = state.pos;
@@ -621,11 +676,9 @@
         }
         if (!p) {
           el.statusText.textContent = 'ожидаю данные';
-          el.placeholder.classList.remove('hidden');
           return;
         }
 
-        el.placeholder.classList.add('hidden');
         const age = Math.max(0, (Date.now() - (p.received || p.ts || Date.now())) / 1000);
         if (age <= 60) {
           el.status.classList.add('online');
@@ -639,10 +692,14 @@
         }
       }
 
+      function ageText(seconds) {
+        if (seconds < 60) return Math.round(seconds) + ' с назад';
+        if (seconds < 3600) return Math.round(seconds / 60) + ' мин назад';
+        return Math.round(seconds / 3600) + ' ч назад';
+      }
+
       function renderLiveInfo() {
         const p = state.pos;
-        el.placeholder.classList.toggle('hidden', !!p);
-
         if (!p) {
           el.coords.textContent = '—';
           el.speed.textContent = '—';
@@ -661,14 +718,14 @@
 
         el.openMaps.href = 'https://yandex.ru/maps/?ll=' +
           p.lon.toFixed(6) + ',' + p.lat.toFixed(6) +
-          '&z=' + state.zoom +
+          '&z=' + (liveMap ? liveMap.getZoom() : 15) +
           '&pt=' + p.lon.toFixed(6) + ',' + p.lat.toFixed(6) + ',pm2rdm';
       }
 
       function renderLive() {
         renderLiveInfo();
         renderStatus();
-        renderLiveMap(false);
+        updateLiveMap();
       }
 
       async function loadLive() {
@@ -682,6 +739,7 @@
           renderLive();
         } catch (error) {
           if (error.auth) return;
+          console.error('live', error);
           state.lastError = 'нет связи с сервером';
           renderStatus();
         }
@@ -709,54 +767,80 @@
           if (p.lon < minLon) minLon = p.lon;
           if (p.lon > maxLon) maxLon = p.lon;
         }
-        return { minLat, maxLat, minLon, maxLon };
+        return { minLat: minLat, maxLat: maxLat, minLon: minLon, maxLon: maxLon };
       }
 
-      function mercY(lat) {
-        return Math.log(Math.tan(Math.PI / 4 + (lat * Math.PI / 180) / 2));
-      }
-
-      function fitZoom(box, width, height) {
-        const spanLon = Math.max(1e-7, (box.maxLon - box.minLon) / 360);
-        const spanLat = Math.max(1e-7, Math.abs(mercY(box.maxLat) - mercY(box.minLat)) / (2 * Math.PI));
-        const zoomX = Math.log2((width * 0.8) / 256 / spanLon);
-        const zoomY = Math.log2((height * 0.8) / 256 / spanLat);
-        return Math.max(2, Math.min(17, Math.floor(Math.min(zoomX, zoomY))));
-      }
-
-      function downsample(points, max) {
-        if (points.length <= max) return points;
-        const step = (points.length - 1) / (max - 1);
-        const out = [];
-        for (let i = 0; i < max; i++) out.push(points[Math.round(i * step)]);
-        return out;
-      }
-
-      function routeMapUrl(trip) {
+      function renderRouteMap(trip) {
         const pts = tripPoints(trip);
-        if (pts.length < 2) return '';
-        const box = bounds(pts);
-        const zoom = fitZoom(box, 650, 450);
-        const centerLat = (box.minLat + box.maxLat) / 2;
-        const centerLon = (box.minLon + box.maxLon) / 2;
+        if (!ymapsReady || document.getElementById('tab-history').hidden) {
+          el.routePlaceholder.textContent = 'Загружаю карту…';
+          el.routePlaceholder.classList.remove('hidden');
+          return;
+        }
+        if (pts.length < 2) {
+          el.routePlaceholder.textContent = 'В этой поездке нет трека';
+          el.routePlaceholder.classList.remove('hidden');
+          return;
+        }
 
-        const q = new URLSearchParams();
-        q.set('ll', centerLon.toFixed(6) + ',' + centerLat.toFixed(6));
-        q.set('z', String(zoom));
-        q.set('size', '650,450');
-        q.set('l', 'map');
+        ensureRouteMap();
+        if (!routeMap) return;
 
-        const down = downsample(pts, MAX_ROUTE_POINTS);
-        q.append('pl', 'c:4C8DFF,w:4,' + down.map(function (p) {
-          return p.lon.toFixed(6) + ',' + p.lat.toFixed(6);
-        }).join(','));
-
-        const first = pts[0];
+        routeMap.geoObjects.removeAll();
+        routeMap.geoObjects.add(new ymaps.Polyline(pts.map(function (p) {
+          return [p.lat, p.lon];
+        }), {}, {
+          strokeColor: '#4C8DFF',
+          strokeWidth: 5,
+          strokeOpacity: 0.9,
+        }));
+        routeMap.geoObjects.add(new ymaps.Placemark([pts[0].lat, pts[0].lon], {
+          hintContent: 'Старт',
+        }, { preset: 'islands#greenCircleDotIcon' }));
         const last = pts[pts.length - 1];
-        q.append('pt', first.lon.toFixed(6) + ',' + first.lat.toFixed(6) + ',pm2grm');
-        q.append('pt', last.lon.toFixed(6) + ',' + last.lat.toFixed(6) + ',pm2rdm');
+        routeMap.geoObjects.add(new ymaps.Placemark([last.lat, last.lon], {
+          hintContent: 'Финиш',
+        }, { preset: 'islands#redCircleDotIcon' }));
 
-        return 'https://static-maps.yandex.ru/1.x/?' + q.toString();
+        const box = routeMap.geoObjects.getBounds();
+        if (box) routeMap.setBounds(box, { checkZoomRange: true, zoomMargin: 30, duration: 300 });
+        else routeMap.setCenter([pts[0].lat, pts[0].lon], 15);
+
+        el.routePlaceholder.classList.add('hidden');
+      }
+
+      function renderTripDetail(trip) {
+        el.routePlaceholder.classList.add('hidden');
+
+        const stats = [
+          ['Дата', dayLabel(trip.startMs)],
+          ['Время', hhmm(trip.startMs) + ' → ' + hhmm(trip.endMs)],
+          ['Расстояние', fmtKm(trip.distanceM)],
+          ['В пути', fmtDur((trip.endMs - trip.startMs) / 1000)],
+          ['В движении', fmtDur(trip.movingSec)],
+          ['Средняя', fmtSpeed(trip.avgSpeedKmh)],
+          ['Максимальная', fmtSpeed(trip.maxSpeedKmh)],
+          ['Точек трека', trip.points],
+          ['Источник', trip.source],
+        ];
+        el.tripStats.innerHTML = '';
+        for (const pair of stats) {
+          const card = elt('div', 'card');
+          card.appendChild(elt('div', 'label', pair[0]));
+          card.appendChild(elt('div', 'value', pair[1]));
+          el.tripStats.appendChild(card);
+        }
+        el.tripNote.classList.toggle('hidden', trip.timeReliable !== false);
+
+        const pts = tripPoints(trip);
+        if (pts.length >= 2) {
+          const box = bounds(pts);
+          el.tripMapsLink.href = 'https://yandex.ru/maps/?ll=' +
+            ((box.minLon + box.maxLon) / 2).toFixed(6) + ',' +
+            ((box.minLat + box.maxLat) / 2).toFixed(6) +
+            '&z=14&pt=' + pts[0].lon.toFixed(6) + ',' + pts[0].lat.toFixed(6) + ',pm2grm';
+        }
+        renderRouteMap(trip);
       }
 
       function renderTripList() {
@@ -802,59 +886,6 @@
         });
       }
 
-      function renderTripDetail(trip) {
-        el.routePlaceholder.classList.add('hidden');
-
-        const stats = [
-          ['Дата', dayLabel(trip.startMs)],
-          ['Время', hhmm(trip.startMs) + ' → ' + hhmm(trip.endMs)],
-          ['Расстояние', fmtKm(trip.distanceM)],
-          ['В пути', fmtDur((trip.endMs - trip.startMs) / 1000)],
-          ['В движении', fmtDur(trip.movingSec)],
-          ['Средняя', fmtSpeed(trip.avgSpeedKmh)],
-          ['Максимальная', fmtSpeed(trip.maxSpeedKmh)],
-          ['Точек трека', trip.points],
-          ['Источник', trip.source],
-        ];
-        el.tripStats.innerHTML = '';
-        for (const pair of stats) {
-          const card = elt('div', 'card');
-          card.appendChild(elt('div', 'label', pair[0]));
-          card.appendChild(elt('div', 'value', pair[1]));
-          el.tripStats.appendChild(card);
-        }
-        el.tripNote.classList.toggle('hidden', trip.timeReliable !== false);
-
-        const url = routeMapUrl(trip);
-        if (url) {
-          const probe = new Image();
-          probe.onload = function () {
-            el.routeMap.src = url;
-            el.routeMap.classList.add('ready');
-          };
-          probe.onerror = function () {
-            el.routePlaceholder.textContent = 'Не удалось загрузить карту маршрута';
-            el.routePlaceholder.classList.remove('hidden');
-          };
-          probe.src = url;
-          state.routeUrl = url;
-        } else {
-          el.routeMap.classList.remove('ready');
-          el.routePlaceholder.textContent = 'В этой поездке нет трека';
-          el.routePlaceholder.classList.remove('hidden');
-        }
-
-        const first = tripPoints(trip)[0];
-        if (first) {
-          const box = bounds(tripPoints(trip));
-          el.tripMapsLink.href = 'https://yandex.ru/maps/?ll=' +
-            ((box.minLon + box.maxLon) / 2).toFixed(6) + ',' +
-            ((box.minLat + box.maxLat) / 2).toFixed(6) +
-            '&z=' + fitZoom(box, 650, 450) +
-            '&pt=' + first.lon.toFixed(6) + ',' + first.lat.toFixed(6) + ',pm2grm';
-        }
-      }
-
       async function selectTrip(id) {
         state.selectedTripId = id;
         for (const row of el.tripList.querySelectorAll('.trip')) {
@@ -863,6 +894,7 @@
         try {
           const data = await api('/api/trips/' + encodeURIComponent(id));
           if (state.selectedTripId !== id) return;
+          state.selectedTrip = data.trip;
           renderTripDetail(data.trip);
         } catch (error) {
           if (!error.auth) {
@@ -881,11 +913,20 @@
           state.trips = Array.isArray(data.trips) ? data.trips : [];
           state.tripsLoadedAt = Date.now();
           hideGate();
-          renderTripList();
+
+          const signature = state.trips.map(function (t) {
+            return t.id + ':' + t.endMs + ':' + t.points;
+          }).join('|');
+          if (signature !== state.tripsSignature) {
+            state.tripsSignature = signature;
+            renderTripList();
+          }
+
           if (state.trips.length) {
-            const selected = state.trips.some(function (t) { return t.id === state.selectedTripId; });
-            const id = selected ? state.selectedTripId : state.trips[0].id;
-            await selectTrip(id);
+            const exists = state.trips.some(function (t) { return t.id === state.selectedTripId; });
+            if (!state.selectedTripId || !exists) {
+              await selectTrip(state.trips[0].id);
+            }
           }
         } catch (error) {
           if (!error.auth) {
@@ -897,11 +938,50 @@
         }
       }
 
-      el.refreshTrips.addEventListener('click', function () { loadTrips(true); });
-      el.backToLive.addEventListener('click', function () { switchTab('live'); });
+      // ---------- вкладки ----------
+
+      function switchTab(tab, push) {
+        if (tab !== 'history') tab = 'live';
+        state.tab = tab;
+        document.querySelectorAll('.tab').forEach(function (button) {
+          button.classList.toggle('active', button.dataset.tab === tab);
+        });
+        document.getElementById('tab-live').hidden = tab !== 'live';
+        document.getElementById('tab-history').hidden = tab !== 'history';
+        if (push !== false) {
+          const hash = '#' + tab;
+          if (location.hash !== hash) history.pushState({ tab: tab }, '', hash);
+        }
+        window.scrollTo(0, 0);
+
+        if (tab === 'history') {
+          loadTrips(false);
+          setTimeout(function () {
+            if (state.selectedTrip) renderRouteMap(state.selectedTrip);
+            if (routeMap) routeMap.container.fitToViewport();
+          }, 250);
+        } else {
+          setTimeout(function () {
+            ensureLiveMap();
+            updateLiveMap();
+            if (liveMap) liveMap.container.fitToViewport();
+          }, 250);
+        }
+      }
+
+      document.querySelectorAll('.tab').forEach(function (button) {
+        button.addEventListener('click', function () { switchTab(button.dataset.tab); });
+      });
 
       window.addEventListener('popstate', function () {
         switchTab(location.hash === '#history' ? 'history' : 'live', false);
+      });
+
+      el.refreshTrips.addEventListener('click', function () { loadTrips(true); });
+      el.backToLive.addEventListener('click', function () { switchTab('live'); });
+
+      el.followToggle.addEventListener('change', function () {
+        setFollow(el.followToggle.checked);
       });
 
       // ---------- пароль ----------
@@ -917,36 +997,35 @@
 
       // ---------- запуск ----------
 
-      document.getElementById('zoomIn').addEventListener('click', function () {
-        if (state.zoom < ZOOM_MAX) {
-          state.zoom += 1;
-          state.zoomChanged = true;
-          renderLiveMap(true);
-        }
-      });
-
-      document.getElementById('zoomOut').addEventListener('click', function () {
-        if (state.zoom > ZOOM_MIN) {
-          state.zoom -= 1;
-          state.zoomChanged = true;
-          renderLiveMap(true);
-        }
-      });
-
       el.openMaps.addEventListener('click', function (event) {
         if (!state.pos) event.preventDefault();
       });
 
+      initMaps().catch(function () {
+        el.placeholder.textContent = 'Интерактивная карта недоступна: проверьте интернет';
+        el.placeholder.classList.remove('hidden');
+      });
+
       loadLive();
       setInterval(loadLive, POLL_MS);
-      setInterval(function () {
-        renderStatus();
-        if (state.pos) renderLiveMap(false);
-      }, 1000);
+      setInterval(function () { renderStatus(); }, 1000);
       setInterval(function () {
         if (state.tab === 'history') loadTrips(false);
       }, TRIPS_REFRESH_MS);
-      if (location.hash === '#history') switchTab('history');
+
+      window.addEventListener('resize', function () {
+        if (liveMap) liveMap.container.fitToViewport();
+        if (routeMap) routeMap.container.fitToViewport();
+      });
+
+      if (location.hash === '#history') switchTab('history', false);
+
+      // Для отладки и автотестов: доступ к экземплярам карт.
+      window.__gpsMaps = {
+        live: function () { return liveMap; },
+        route: function () { return routeMap; },
+        ready: function () { return ymapsReady; },
+      };
     })();
   </script>
 </body>

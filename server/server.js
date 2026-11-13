@@ -71,6 +71,10 @@ const server = http.createServer((req, res) => {
     handleLast(req, res);
     return;
   }
+  if (url.pathname === '/api/config' && req.method === 'GET') {
+    sendJson(res, 200, { ok: true, ymapsKey: (process.env.YMAPS_JS_KEY || '').trim() });
+    return;
+  }
   if (url.pathname === '/api/health' && req.method === 'GET') {
     sendJson(res, 200, { ok: true, hasPosition: !!state.pos, trips: trips.size });
     return;
@@ -218,15 +222,16 @@ function handleTripGet(req, res, pathname) {
   sendJson(res, 200, { ok: true, trip });
 }
 
-/** Удаляет только демонстрационные поездки (source начинается с "demo-"). */
+/** Удаляет только демонстрационные поездки из seed.js (source вида demo-2026-11-13.nmea). */
 function handleDemoClear(req, res) {
   if (!tokenAllowed(req)) {
     sendJson(res, 401, { ok: false, error: 'bad token' });
     return;
   }
+  const demoSource = /^demo-\d{4}-\d{2}-\d{2}\.nmea$/;
   let removed = 0;
   for (const [id, trip] of trips) {
-    if (String(trip.source || '').startsWith('demo-')) {
+    if (demoSource.test(String(trip.source || ''))) {
       trips.delete(id);
       removed++;
     }
