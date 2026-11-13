@@ -62,7 +62,11 @@
       gap: 8px;
       margin-bottom: 14px;
       border-bottom: 1px solid var(--stroke);
-      padding-bottom: 8px;
+      padding: 8px 0;
+      position: sticky;
+      top: 0;
+      z-index: 6;
+      background: var(--bg);
     }
     .tab {
       border: 1px solid var(--stroke);
@@ -205,6 +209,7 @@
       font-weight: 600;
       flex: 0 0 auto;
     }
+    .panel-actions { display: flex; gap: 6px; }
     .panel-head .count { color: var(--dim); font-weight: 400; font-size: 12px; }
     .ghost {
       border: 1px solid var(--stroke);
@@ -367,7 +372,10 @@
         <aside class="trips-panel">
           <div class="panel-head">
             <span>Поездки <span class="count" id="tripCount"></span></span>
-            <button type="button" class="ghost" id="refreshTrips">Обновить</button>
+            <div class="panel-actions">
+              <button type="button" class="ghost" id="backToLive">‹ Сейчас</button>
+              <button type="button" class="ghost" id="refreshTrips">Обновить</button>
+            </div>
           </div>
           <div class="triplist" id="tripList"></div>
           <div class="placeholder hidden" id="tripEmpty">Пока нет поездок. Включите передачу истории в приложении.</div>
@@ -450,6 +458,7 @@
         tripStats: document.getElementById('tripStats'),
         tripNote: document.getElementById('tripNote'),
         refreshTrips: document.getElementById('refreshTrips'),
+        backToLive: document.getElementById('backToLive'),
       };
 
       // ---------- общее ----------
@@ -519,14 +528,19 @@
 
       // ---------- вкладки ----------
 
-      function switchTab(tab) {
+      function switchTab(tab, push) {
+        if (tab !== 'history') tab = 'live';
         state.tab = tab;
         document.querySelectorAll('.tab').forEach(function (button) {
           button.classList.toggle('active', button.dataset.tab === tab);
         });
         document.getElementById('tab-live').hidden = tab !== 'live';
         document.getElementById('tab-history').hidden = tab !== 'history';
-        if (history.replaceState) history.replaceState(null, '', '#' + tab);
+        if (push !== false) {
+          const hash = '#' + tab;
+          if (location.hash !== hash) history.pushState({ tab: tab }, '', hash);
+        }
+        window.scrollTo(0, 0);
         if (tab === 'history') loadTrips(false);
       }
 
@@ -884,6 +898,11 @@
       }
 
       el.refreshTrips.addEventListener('click', function () { loadTrips(true); });
+      el.backToLive.addEventListener('click', function () { switchTab('live'); });
+
+      window.addEventListener('popstate', function () {
+        switchTab(location.hash === '#history' ? 'history' : 'live', false);
+      });
 
       // ---------- пароль ----------
 

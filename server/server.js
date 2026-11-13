@@ -59,6 +59,10 @@ const server = http.createServer((req, res) => {
     handleTripsList(req, res);
     return;
   }
+  if (url.pathname === '/api/trips/demo' && req.method === 'DELETE') {
+    handleDemoClear(req, res);
+    return;
+  }
   if (url.pathname.startsWith('/api/trips/') && req.method === 'GET') {
     handleTripGet(req, res, url.pathname);
     return;
@@ -212,6 +216,23 @@ function handleTripGet(req, res, pathname) {
     return;
   }
   sendJson(res, 200, { ok: true, trip });
+}
+
+/** Удаляет только демонстрационные поездки (source начинается с "demo-"). */
+function handleDemoClear(req, res) {
+  if (!tokenAllowed(req)) {
+    sendJson(res, 401, { ok: false, error: 'bad token' });
+    return;
+  }
+  let removed = 0;
+  for (const [id, trip] of trips) {
+    if (String(trip.source || '').startsWith('demo-')) {
+      trips.delete(id);
+      removed++;
+    }
+  }
+  if (removed > 0) scheduleTripsSave();
+  sendJson(res, 200, { ok: true, removed });
 }
 
 function handleLast(req, res) {
