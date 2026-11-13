@@ -5,6 +5,7 @@ services:
     environment:
       TRACK_TOKEN: "${TRACK_TOKEN:?Задайте TRACK_TOKEN в server/.env}"
       VIEW_PASSWORD: "${VIEW_PASSWORD:-}"
+      YMAPS_JS_KEY: "${YMAPS_JS_KEY:-}"
       STATE_FILE: /data/state.json
       TZ: Europe/Moscow
     volumes:
