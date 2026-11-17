@@ -842,8 +842,21 @@
           el.statusText.textContent = 'нет новых данных · ' + ageText(age);
         } else {
           el.status.classList.add('offline');
-          el.statusText.textContent = 'нет данных · ' + ageText(age);
+          el.statusText.textContent = 'нет связи · ' + ageText(age) +
+            ' · последняя активность ' + clockText(p.received || p.ts);
         }
+      }
+
+      /** Время последней активности: сегодня — только часы, иначе с датой. */
+      function clockText(ms) {
+        if (!ms) return '—';
+        const at = new Date(ms);
+        const now = new Date();
+        const time = at.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+        if (at.toDateString() === now.toDateString()) return time;
+        const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+        if (at.toDateString() === yesterday.toDateString()) return 'вчера ' + time;
+        return at.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' }) + ' ' + time;
       }
 
       function ageText(seconds) {
