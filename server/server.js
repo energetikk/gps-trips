@@ -29,6 +29,8 @@ const PUBLIC_DIR = (process.env.PUBLIC_DIR || '').trim();
 
 const MAX_POSITION_BODY = 8 * 1024;
 const MAX_TRIP_BODY = 2 * 1024 * 1024;
+const MAX_CAMERA_BODY = 8 * 1024 * 1024;
+const CAMERA_NAMES = ['front', 'back', 'left', 'right'];
 const MAX_TRACK_POINTS = 2000;
 const MAX_TRIPS = 5000;
 const TRAIL_MAX = 300;
@@ -41,6 +43,10 @@ if (!TOKEN) {
 
 let state = { pos: null, trail: [] };
 const trips = new Map();
+
+// Снимки четырёх камер: сайт просит, магнитола присылает.
+// want — время запроса с сайта, taken — время последнего полученного кадра.
+const camera = { want: 0, taken: 0, ts: 0, device: '', error: '', frames: new Map() };
 loadState();
 loadTrips();
 
@@ -49,6 +55,22 @@ const server = http.createServer((req, res) => {
 
   if (url.pathname === '/api/position' && req.method === 'POST') {
     handlePosition(req, res);
+    return;
+  }
+  if (url.pathname === '/api/camera/request' && req.method === 'POST') {
+    handleCameraRequest(req, res);
+    return;
+  }
+  if (url.pathname === '/api/camera' && req.method === 'POST') {
+    handleCameraUpload(req, res);
+    return;
+  }
+  if (url.pathname === '/api/camera' && req.method === 'GET') {
+    handleCameraState(req, res);
+    return;
+  }
+  if (url.pathname.startsWith('/api/camera/frame/') && req.method === 'GET') {
+    handleCameraFrame(req, res, url.pathname);
     return;
   }
   if (url.pathname === '/api/trips' && req.method === 'POST') {
@@ -146,13 +168,115 @@ function handlePosition(req, res) {
       }
       scheduleSave();
 
-      res.writeHead(204, noStoreHeaders());
-      res.end();
+      // Тот же ответ сообщает приложению, просит ли сайт снимок с камер:
+      // приложение сравнивает want с тем, что уже отправило.
+      sendJson(res, 200, {
+        ok: true,
+        camera: camera.want && camera.want > camera.taken ? camera.want : 0,
+      });
     })
     .catch((error) => {
       const code = error.message === 'too large' ? 413 : 400;
       sendJson(res, code, { ok: false, error: error.message });
     });
+}
+
+// ---------- камеры 360 ----------
+
+// Сайт просит снимок. Пока прошлый запрос не обслужен, новый его не сдвигает.
+function handleCameraRequest(req, res) {
+  if (!viewAllowed(req)) {
+    sendJson(res, 401, { ok: false, error: 'bad password' });
+    return;
+  }
+  if (!camera.want || camera.want <= camera.taken) camera.want = Date.now();
+  sendJson(res, 200, { ok: true, want: camera.want });
+}
+
+// Магнитола присылает кадры: { ts, device, error, frames: { front: "<base64>", ... } }.
+function handleCameraUpload(req, res) {
+  if (!tokenAllowed(req)) {
+    sendJson(res, 401, { ok: false, error: 'bad token' });
+    return;
+  }
+
+  readBody(req, MAX_CAMERA_BODY)
+    .then((text) => {
+      let body;
+      try {
+        body = JSON.parse(text);
+      } catch {
+        sendJson(res, 400, { ok: false, error: 'bad json' });
+        return;
+      }
+
+      const frames = body && body.frames;
+      if (!frames || typeof frames !== 'object') {
+        sendJson(res, 400, { ok: false, error: 'no frames' });
+        return;
+      }
+
+      const stored = [];
+      for (const name of CAMERA_NAMES) {
+        const value = frames[name];
+        if (typeof value !== 'string' || !value) continue;
+        const buf = Buffer.from(value, 'base64');
+        if (!buf.length || buf.length > MAX_CAMERA_BODY / 4) continue;
+        camera.frames.set(name, buf);
+        stored.push(name);
+      }
+      if (!stored.length) {
+        sendJson(res, 400, { ok: false, error: 'no usable frames' });
+        return;
+      }
+
+      camera.ts = normalizeTs(body.ts);
+      camera.device = String(body.device || '').slice(0, 64);
+      camera.error = String(body.error || '').slice(0, 300);
+      camera.taken = camera.ts;
+      camera.want = 0;
+      sendJson(res, 200, { ok: true, frames: stored });
+    })
+    .catch((error) => {
+      const code = error.message === 'too large' ? 413 : 400;
+      sendJson(res, code, { ok: false, error: error.message });
+    });
+}
+
+function handleCameraState(req, res) {
+  if (!viewAllowed(req)) {
+    sendJson(res, 401, { ok: false, error: 'bad password' });
+    return;
+  }
+  sendJson(res, 200, {
+    ok: true,
+    want: camera.want,
+    taken: camera.taken,
+    ts: camera.ts,
+    device: camera.device,
+    error: camera.error,
+    frames: CAMERA_NAMES.filter((name) => camera.frames.has(name)),
+    pending: Boolean(camera.want && camera.want > camera.taken),
+  });
+}
+
+function handleCameraFrame(req, res, pathname) {
+  if (!viewAllowed(req)) {
+    sendJson(res, 401, { ok: false, error: 'bad password' });
+    return;
+  }
+  const name = decodeURIComponent(pathname.slice('/api/camera/frame/'.length));
+  const buf = camera.frames.get(name);
+  if (!buf) {
+    sendJson(res, 404, { ok: false, error: 'no frame' });
+    return;
+  }
+  res.writeHead(200, {
+    'Content-Type': 'image/jpeg',
+    'Content-Length': buf.length,
+    ...noStoreHeaders(),
+  });
+  res.end(buf);
 }
 
 function handleTripUpload(req, res) {
