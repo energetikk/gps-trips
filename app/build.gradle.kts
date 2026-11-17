@@ -23,8 +23,8 @@ android {
         applicationId = "ru.gpstrips"
         minSdk = 26
         targetSdk = 34
-        versionCode = 7
-        versionName = "1.6"
+        versionCode = 8
+        versionName = "1.7"
         buildConfigField("String", "MAPKIT_API_KEY", "\"$mapKitApiKey\"")
     }
 
