@@ -216,26 +216,35 @@ function handleCameraUpload(req, res) {
         return;
       }
 
-      const stored = [];
+      const stored = new Map();
       for (const name of CAMERA_NAMES) {
         const value = frames[name];
         if (typeof value !== 'string' || !value) continue;
         const buf = Buffer.from(value, 'base64');
         if (!buf.length || buf.length > MAX_CAMERA_BODY / 4) continue;
-        camera.frames.set(name, buf);
-        stored.push(name);
+        stored.set(name, buf);
       }
-      if (!stored.length) {
+
+      // Кадров может не быть: магнитола присылает тогда только текст ошибки,
+      // и запрос всё равно считается обслуженным, чтобы страница не ждала вечно.
+      const failure = String((body && body.error) || '').slice(0, 300);
+      if (!stored.size && !failure) {
         sendJson(res, 400, { ok: false, error: 'no usable frames' });
         return;
       }
 
-      camera.ts = normalizeTs(body.ts);
+      const ts = normalizeTs(body.ts);
+      if (stored.size) {
+        camera.frames = stored;
+        camera.ts = ts;
+      } else if (!camera.ts) {
+        camera.ts = ts;
+      }
       camera.device = String(body.device || '').slice(0, 64);
-      camera.error = String(body.error || '').slice(0, 300);
-      camera.taken = camera.ts;
+      camera.error = failure;
+      camera.taken = ts;
       camera.want = 0;
-      sendJson(res, 200, { ok: true, frames: stored });
+      sendJson(res, 200, { ok: true, frames: [...stored.keys()] });
     })
     .catch((error) => {
       const code = error.message === 'too large' ? 413 : 400;

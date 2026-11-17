@@ -31,7 +31,9 @@ object LiveState {
         val syncDone: Int = 0,
         val syncTotal: Int = 0,
         val lastSyncAt: Long = 0L,
-        val syncError: String? = null
+        val syncError: String? = null,
+        val lastCameraAt: Long = 0L,
+        val lastCameraError: String? = null
     )
 
     private val _status = MutableStateFlow(Status())
@@ -53,6 +55,8 @@ class LiveTrackingService : android.app.Service() {
     private lateinit var prefs: Prefs
     private lateinit var tail: LogTail
     private var lastNotifiedAt = 0L
+    private var lastCameraWant = 0L
+    private val cameraBusy = java.util.concurrent.atomic.AtomicBoolean(false)
 
     override fun onCreate() {
         super.onCreate()
@@ -110,7 +114,13 @@ class LiveTrackingService : android.app.Service() {
         }
 
         val now = System.currentTimeMillis()
-        val error = LiveSender.send(LiveSender.positionUrl(endpoint), prefs.liveToken, prefs.liveDevice, fix)
+        val reply = LiveSender.sendReply(
+            LiveSender.positionUrl(endpoint),
+            prefs.liveToken,
+            prefs.liveDevice,
+            fix
+        )
+        val error = reply.error
         LiveState.update {
             it.copy(
                 lastAttemptAt = now,
@@ -118,6 +128,33 @@ class LiveTrackingService : android.app.Service() {
                 sentCount = if (error == null) it.sentCount + 1 else it.sentCount,
                 lastError = error
             )
+        }
+
+        // Сервер отвечает на точку, просит ли сайт снимок с камер.
+        val want = Camera.requested(reply.body)
+        if (want > 0 && want != lastCameraWant) {
+            lastCameraWant = want
+            captureCameras(want)
+        }
+    }
+
+    /** Снимок с четырёх камер по запросу с сайта и отправка кадров обратно. */
+    private fun captureCameras(want: Long) {
+        if (!cameraBusy.compareAndSet(false, true)) return
+        scope.launch {
+            try {
+                val base = LiveSender.baseUrl(prefs.liveUrl)
+                val shot = Camera.shoot()
+                val error = Camera.upload(base, prefs.liveToken, prefs.liveDevice, want, shot)
+                LiveState.update {
+                    it.copy(
+                        lastCameraAt = System.currentTimeMillis(),
+                        lastCameraError = error ?: shot.error
+                    )
+                }
+            } finally {
+                cameraBusy.set(false)
+            }
         }
     }
 
@@ -194,7 +231,9 @@ class LiveTrackingService : android.app.Service() {
     companion object {
         private const val CHANNEL_ID = "live_tracking"
         private const val NOTIF_ID = 41
-        private const val HEARTBEAT_MS = 60_000L
+        // Пока машина стоит, точка уходит раз в 15 с. Это же и задержка запроса
+    // снимка с сайта: просьба приходит в ответе на ближайшую точку.
+    private const val HEARTBEAT_MS = 15_000L
         private const val NOTIFY_EVERY_MS = 10_000L
 
         fun start(ctx: Context) {

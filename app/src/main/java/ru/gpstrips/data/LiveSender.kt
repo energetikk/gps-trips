@@ -66,17 +66,30 @@ object LiveSender {
         append("]}")
     }
 
-    fun send(url: String, token: String, device: String, fix: LiveFix): String? {
-        if (!isValidEndpoint(url)) return "Адрес должен начинаться с http:// или https://"
+    fun send(url: String, token: String, device: String, fix: LiveFix): String? =
+        sendReply(url, token, device, fix).error
+
+    /**
+     * То же, но с телом ответа: сервер отвечает на точку
+     * `{"ok":true,"camera":<время запроса снимка>}`, и по этому полю приложение
+     * узнаёт, что сайт просит кадры с камер.
+     */
+    fun sendReply(url: String, token: String, device: String, fix: LiveFix): Reply {
+        if (!isValidEndpoint(url)) return Reply("Адрес должен начинаться с http:// или https://", "")
         return post(url, token, payload(fix, device))
     }
 
+    data class Reply(val error: String?, val body: String)
+
+    /** Отправка готового JSON: используется снимками с камер. */
+    fun postJson(url: String, token: String, body: String): Reply = post(url, token, body)
+
     fun uploadTrip(base: String, token: String, device: String, trip: Trip): String? {
         if (!isValidEndpoint(base)) return "Адрес должен начинаться с http:// или https://"
-        return post(tripsUrl(base), token, tripPayload(trip, device))
+        return post(tripsUrl(base), token, tripPayload(trip, device)).error
     }
 
-    private fun post(url: String, token: String, body: String): String? {
+    private fun post(url: String, token: String, body: String): Reply {
         val bytes = body.toByteArray(Charsets.UTF_8)
         return try {
             val conn = URL(url).openConnection() as HttpURLConnection
@@ -96,13 +109,13 @@ object LiveSender {
                 .orEmpty()
             conn.disconnect()
 
-            if (code in 200..299) null else "HTTP $code: ${text.take(200)}"
+            if (code in 200..299) Reply(null, text) else Reply("HTTP $code: ${text.take(200)}", "")
         } catch (e: Exception) {
-            e.message ?: e.javaClass.simpleName
+            Reply(e.message ?: e.javaClass.simpleName, "")
         }
     }
 
-    private fun json(value: String): String = buildString {
+    fun json(value: String): String = buildString {
         append('"')
         for (c in value) {
             when (c) {
