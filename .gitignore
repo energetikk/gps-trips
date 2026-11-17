@@ -10,3 +10,4 @@ captures/
 server/.env
 server/node_modules/
 dist/*.apk
+native/build/
