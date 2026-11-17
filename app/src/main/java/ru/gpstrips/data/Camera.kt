@@ -1,6 +1,8 @@
 package ru.gpstrips.data
 
+import android.graphics.Bitmap
 import android.util.Base64
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.util.concurrent.TimeUnit
 
@@ -29,6 +31,9 @@ object Camera {
         "/data/local/tmp/camd"
     )
 
+    /** Сырой кадр целиком, если camd отдаёт его вместо готовых JPEG. */
+    const val RAW_FRAME = "frame.yuv"
+
     data class Shot(val frames: Map<String, ByteArray>, val error: String?)
 
     /**
@@ -48,6 +53,7 @@ object Camera {
 
         // старые кадры не должны уехать вместо новых
         NAMES.forEach { File(dir, "$it.jpg").delete() }
+        File(dir, RAW_FRAME).delete()
         File(dir, "error.txt").delete()
 
         val runError = try {
@@ -72,12 +78,41 @@ object Camera {
             if (file.isFile && file.length() > 0) name to file.readBytes() else null
         }.toMap()
 
+        // camd может отдать сырой кадр целиком — тогда режем и сжимаем сами.
+        if (frames.isEmpty()) {
+            val raw = File(dir, RAW_FRAME)
+            if (raw.isFile && raw.length() >= Yuyv.FRAME_BYTES) {
+                runCatching { tilesToJpeg(raw.readBytes()) }.getOrNull()
+                    ?.takeIf { it.size == NAMES.size }
+                    ?.let { return Shot(it, null) }
+            }
+        }
+
         val fileError = File(dir, "error.txt").takeIf { it.isFile }?.readText()?.trim()
         return when {
             frames.size == NAMES.size -> Shot(frames, null)
             frames.isEmpty() -> Shot(emptyMap(), fileError ?: runError ?: "кадров нет")
             else -> Shot(frames, fileError ?: runError)
         }
+    }
+
+    /** Режет кадр 5120×800 на четыре плитки и сжимает каждую в JPEG. */
+    private fun tilesToJpeg(frame: ByteArray): Map<String, ByteArray> {
+        val result = LinkedHashMap<String, ByteArray>()
+        NAMES.forEachIndexed { index, name ->
+            val argb = Yuyv.toArgb(
+                frame,
+                Yuyv.tileOffset(index),
+                Yuyv.TILE_WIDTH,
+                Yuyv.TILE_HEIGHT
+            )
+            val bitmap = Bitmap.createBitmap(argb, Yuyv.TILE_WIDTH, Yuyv.TILE_HEIGHT, Bitmap.Config.ARGB_8888)
+            val out = ByteArrayOutputStream()
+            bitmap.compress(Bitmap.CompressFormat.JPEG, 80, out)
+            bitmap.recycle()
+            result[name] = out.toByteArray()
+        }
+        return result
     }
 
     /** Отправка кадров на сайт: `POST /api/camera`. */
